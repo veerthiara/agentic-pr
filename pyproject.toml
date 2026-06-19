@@ -1,0 +1,6 @@
+[project]
+name = "agentic-pr"
+version = "0.1.0"
+description = "Local Mac Studio GitHub issue to PR coding agent"
+requires-python = ">=3.11"
+dependencies = []
