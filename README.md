@@ -17,7 +17,7 @@ Rev 03 adds a polling loop while keeping `make` as the entrypoint. GitHub operat
 Edit `config/agent-test.env` if needed. The current test config points at:
 
 ```env
-REPO_PATH=/Users/vsinghthiara/Documents/Learning/agent-test
+REPO_PATH=/Users/vsinghthiara/Developer/Learning/agent-test
 OWNER_REPO=veerthiara/agent-test-local-ai
 ```
 
@@ -84,10 +84,62 @@ If the run fails after an issue is picked up, the issue should receive `agent-fa
 Logs are written to:
 
 ```text
-/Users/vsinghthiara/Documents/Learning/agentic-pr/logs
+/Users/vsinghthiara/Developer/Learning/agentic-pr/logs
 ```
 
 Rev 04 will add a macOS `launchd` service so this can start automatically.
+
+## LaunchAgent Service
+
+Rev 04 adds a macOS user LaunchAgent for the poller. It runs as your normal user after login, so it can use your existing `gh` authentication and local Aider/Ollama setup. It does not use `sudo`, does not auto-merge PRs, and still calls the Python CLI as the real runner.
+
+Install the service:
+
+```sh
+make install-service CONFIG=config/agent-test.env
+```
+
+Start or restart it:
+
+```sh
+make start-service
+make restart-service
+```
+
+Stop it:
+
+```sh
+make stop-service
+```
+
+Check status:
+
+```sh
+make status-service
+```
+
+Follow logs:
+
+```sh
+make tail-service-logs
+```
+
+The service writes launchd output to:
+
+```text
+logs/launchd.out.log
+logs/launchd.err.log
+```
+
+To test from GitHub mobile or browser, create an issue in `veerthiara/agent-test-local-ai` and apply the `agent-run` label. The service should pick it up, run the same poller workflow, and create a PR.
+
+Because this project lives under `Documents`, macOS privacy permissions may block background access. If that happens, `logs/launchd.err.log` should reveal the permission failure, and a later revision can move the project to `~/Developer`.
+
+Uninstall without deleting logs:
+
+```sh
+make uninstall-service
+```
 
 ## Test
 

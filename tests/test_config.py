@@ -56,7 +56,7 @@ OLLAMA_API_BASE=http://localhost:11434/
 LOG_DIR=logs
 RUN_DIR=var/run
 POLL_INTERVAL_SECONDS=300
-LOCK_FILE=/Users/vsinghthiara/Documents/Learning/agentic-pr/var/run/agent-test.lock
+LOCK_FILE=/Users/vsinghthiara/Developer/Learning/agentic-pr/var/run/agent-test.lock
 AIDER_EXTRA_ARGS=--no-show-model-warnings --message "hello world"
 """
             )
@@ -71,7 +71,7 @@ AIDER_EXTRA_ARGS=--no-show-model-warnings --message "hello world"
             self.assertEqual(config.poll_interval_seconds, 300)
             self.assertEqual(
                 config.lock_file,
-                Path("/Users/vsinghthiara/Documents/Learning/agentic-pr/var/run/agent-test.lock").resolve(),
+                Path("/Users/vsinghthiara/Developer/Learning/agentic-pr/var/run/agent-test.lock").resolve(),
             )
             self.assertEqual(config.aider_extra_args, ("--no-show-model-warnings", "--message", "hello world"))
 

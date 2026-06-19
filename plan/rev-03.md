@@ -21,7 +21,7 @@ Config additions:
 
 ```env
 POLL_INTERVAL_SECONDS=300
-LOCK_FILE=/Users/vsinghthiara/Documents/Learning/agentic-pr/var/run/agent-test.lock
+LOCK_FILE=/Users/vsinghthiara/Developer/Learning/agentic-pr/var/run/agent-test.lock
 ```
 
 Expected behavior:
