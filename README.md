@@ -1,8 +1,8 @@
 # agentic-pr
 
-Local one-shot GitHub issue runner for an Aider + Ollama workflow.
+Local GitHub issue runner for an Aider + Ollama workflow.
 
-Rev 02 uses a small Python CLI while keeping `make` as the entrypoint. GitHub operations still go through the `gh` CLI, and code generation still runs Aider as an external command.
+Rev 03 adds a polling loop while keeping `make` as the entrypoint. GitHub operations still go through the `gh` CLI, and code generation still runs Aider as an external command.
 
 ## Requirements
 
@@ -14,7 +14,12 @@ Rev 02 uses a small Python CLI while keeping `make` as the entrypoint. GitHub op
 
 ## Setup
 
-Edit `config/agent-test.env` and set `OWNER_REPO` to the GitHub repository, for example `octocat/hello-world`.
+Edit `config/agent-test.env` if needed. The current test config points at:
+
+```env
+REPO_PATH=/Users/vsinghthiara/Documents/Learning/agent-test
+OWNER_REPO=veerthiara/agent-test-local-ai
+```
 
 Then check the local environment:
 
@@ -42,10 +47,47 @@ Expected flow:
 2. Move it to `agent-running`.
 3. Update the base branch and create `agent/issue-<number>-<timestamp>`.
 4. Run Aider with the configured Ollama model.
-5. Commit with a `REV02:` commit message and push the branch.
+5. Commit with a `REV03:` commit message and push the branch.
 6. Open a PR.
 7. Comment on the issue with the PR URL.
 8. Replace `agent-running` with `agent-pr-created`.
+
+## Polling
+
+Rev 03 lets the Mac Studio wait for GitHub issues and process one issue per poll cycle.
+
+Start the poller:
+
+```sh
+make poll CONFIG=config/agent-test.env
+```
+
+Stop it with `Ctrl+C`.
+
+The poller:
+
+1. Prints the repo, owner repo, polling interval, model, and lock file on startup.
+2. Sleeps for `POLL_INTERVAL_SECONDS` between cycles.
+3. Calls the same `run-once` workflow each cycle.
+4. Processes only one issue per cycle.
+5. Uses `LOCK_FILE` to avoid overlapping runs.
+6. Continues polling after a failed issue.
+
+To test from GitHub mobile or browser, create an issue in `veerthiara/agent-test-local-ai` and apply the `agent-run` label. The expected label flow is:
+
+```text
+agent-run -> agent-running -> agent-pr-created
+```
+
+If the run fails after an issue is picked up, the issue should receive `agent-failed`.
+
+Logs are written to:
+
+```text
+/Users/vsinghthiara/Documents/Learning/agentic-pr/logs
+```
+
+Rev 04 will add a macOS `launchd` service so this can start automatically.
 
 ## Test
 

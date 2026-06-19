@@ -11,7 +11,7 @@ This repo is a local Aider + Ollama agent runner. Keep the implementation simple
 - Keep GitHub operations behind `gh` CLI wrappers in `github_ops.py`.
 - Keep git operations behind `git_ops.py`.
 - Keep external command execution behind `command.py`.
-- Do not add webhooks, polling, launchd, Slack, Discord, or multi-repo behavior until the relevant revision asks for it.
+- Do not add webhooks, launchd, Slack, Discord, or multi-repo behavior until the relevant revision asks for it.
 - Prefer small modules with clear responsibilities over large all-in-one files.
 - Tests must not call GitHub, Aider, Ollama, or real remotes.
 
@@ -25,4 +25,4 @@ REV02: short imperative message
 REV03: short imperative message
 ```
 
-Use the current revision prefix for agent-created commits. For this revision, use `REV02: <some message>`.
+Use the current revision prefix for agent-created commits. For this revision, use `REV03: <some message>`.

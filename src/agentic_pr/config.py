@@ -32,6 +32,8 @@ class AgentConfig:
     aider_extra_args: tuple[str, ...]
     log_dir: Path
     run_dir: Path
+    poll_interval_seconds: int
+    lock_file: Path
 
 
 class ConfigError(ValueError):
@@ -68,7 +70,10 @@ def load_config(path: str | Path) -> AgentConfig:
     repo_path = Path(values["REPO_PATH"]).expanduser().resolve()
     log_dir = Path(values.get("LOG_DIR", repo_path / "logs")).expanduser()
     run_dir = Path(values.get("RUN_DIR", repo_path / "var" / "run")).expanduser()
+    poll_interval_seconds = _positive_int(values.get("POLL_INTERVAL_SECONDS", "300"), "POLL_INTERVAL_SECONDS")
 
+    resolved_run_dir = _resolve_path(run_dir, repo_path)
+    lock_file = Path(values.get("LOCK_FILE", resolved_run_dir / "agent.lock")).expanduser()
     return AgentConfig(
         repo_path=repo_path,
         owner_repo=values["OWNER_REPO"],
@@ -81,7 +86,9 @@ def load_config(path: str | Path) -> AgentConfig:
         ollama_api_base=values["OLLAMA_API_BASE"].rstrip("/"),
         aider_extra_args=tuple(_split_args(values.get("AIDER_EXTRA_ARGS", ""))),
         log_dir=_resolve_path(log_dir, repo_path),
-        run_dir=_resolve_path(run_dir, repo_path),
+        run_dir=resolved_run_dir,
+        poll_interval_seconds=poll_interval_seconds,
+        lock_file=_resolve_path(lock_file, repo_path),
     )
 
 
@@ -99,3 +106,13 @@ def _resolve_path(path: Path, repo_path: Path) -> Path:
     if path.is_absolute():
         return path.resolve()
     return (repo_path / path).resolve()
+
+
+def _positive_int(value: str, key: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise ConfigError(f"{key} must be an integer") from exc
+    if parsed <= 0:
+        raise ConfigError(f"{key} must be greater than zero")
+    return parsed
