@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from agentic_pr.command import CommandError, run
 from agentic_pr.config import AgentConfig
+from agentic_pr.status import status_labels
 
 
 @dataclass(frozen=True)
@@ -15,11 +16,13 @@ class Issue:
     created_at: str
 
 
-LABELS = {
-    "todo": ("ededed", "Agent should pick up this issue."),
-    "running": ("fbca04", "Agent is currently working on this issue."),
-    "done": ("0e8a16", "Agent created a pull request for this issue."),
-    "failed": ("b60205", "Agent failed while working on this issue."),
+LABEL_STYLES = {
+    "agent-run": ("ededed", "Agent should pick up this issue."),
+    "agent-running": ("fbca04", "Agent is currently working on this issue."),
+    "agent-pr-created": ("0e8a16", "Agent created a pull request for this issue."),
+    "agent-failed": ("b60205", "Agent failed while working on this issue."),
+    "agent-no-changes": ("5319e7", "Agent ran but produced no file changes."),
+    "agent-blocked": ("d93f0b", "Agent could not safely continue without intervention."),
 }
 
 
@@ -29,13 +32,8 @@ def ensure_repo_access(config: AgentConfig) -> None:
 
 def ensure_labels(config: AgentConfig) -> None:
     existing = _existing_label_names(config)
-    wanted = {
-        config.label_todo: LABELS["todo"],
-        config.label_running: LABELS["running"],
-        config.label_done: LABELS["done"],
-        config.label_failed: LABELS["failed"],
-    }
-    for name, (color, description) in wanted.items():
+    for name in status_labels(config):
+        color, description = LABEL_STYLES.get(name, ("ededed", "Agent status label."))
         if name in existing:
             continue
         run(
@@ -93,55 +91,23 @@ def remove_label(config: AgentConfig, issue_number: int, label: str) -> None:
 
 
 def set_running(config: AgentConfig, issue_number: int) -> None:
-    run(
-        [
-            "gh",
-            "issue",
-            "edit",
-            str(issue_number),
-            "--repo",
-            config.owner_repo,
-            "--add-label",
-            config.label_running,
-            "--remove-label",
-            config.label_todo,
-        ]
-    )
+    _set_status_label(config, issue_number, config.label_running)
 
 
 def mark_done(config: AgentConfig, issue_number: int) -> None:
-    run(
-        [
-            "gh",
-            "issue",
-            "edit",
-            str(issue_number),
-            "--repo",
-            config.owner_repo,
-            "--remove-label",
-            config.label_running,
-            "--add-label",
-            config.label_done,
-        ]
-    )
+    _set_status_label(config, issue_number, config.label_done)
 
 
 def mark_failed(config: AgentConfig, issue_number: int) -> None:
-    run(
-        [
-            "gh",
-            "issue",
-            "edit",
-            str(issue_number),
-            "--repo",
-            config.owner_repo,
-            "--remove-label",
-            config.label_running,
-            "--add-label",
-            config.label_failed,
-        ],
-        check=False,
-    )
+    _set_status_label(config, issue_number, config.label_failed, check=False)
+
+
+def mark_no_changes(config: AgentConfig, issue_number: int) -> None:
+    _set_status_label(config, issue_number, config.label_no_changes, check=False)
+
+
+def mark_blocked(config: AgentConfig, issue_number: int) -> None:
+    _set_status_label(config, issue_number, config.label_blocked, check=False)
 
 
 def clear_running(config: AgentConfig, issue_number: int) -> None:
@@ -171,6 +137,14 @@ def create_pr(config: AgentConfig, branch: str, title: str, body: str) -> str:
         ]
     )
     return result.stdout.strip()
+
+
+def _set_status_label(config: AgentConfig, issue_number: int, label: str, *, check: bool = True) -> None:
+    args = ["gh", "issue", "edit", str(issue_number), "--repo", config.owner_repo, "--add-label", label]
+    for existing in status_labels(config):
+        if existing != label:
+            args.extend(["--remove-label", existing])
+    run(args, check=check)
 
 
 def _existing_label_names(config: AgentConfig) -> set[str]:

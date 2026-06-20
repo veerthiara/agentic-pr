@@ -28,12 +28,20 @@ class AgentConfig:
     label_running: str
     label_done: str
     label_failed: str
+    label_no_changes: str
+    label_blocked: str
     ollama_api_base: str
     aider_extra_args: tuple[str, ...]
     log_dir: Path
     run_dir: Path
     poll_interval_seconds: int
     lock_file: Path
+    run_record_dir: Path
+    agent_host_label: str
+    comment_on_start: bool
+    comment_on_success: bool
+    comment_on_failure: bool
+    comment_on_no_changes: bool
 
 
 class ConfigError(ValueError):
@@ -74,6 +82,7 @@ def load_config(path: str | Path) -> AgentConfig:
 
     resolved_run_dir = _resolve_path(run_dir, repo_path)
     lock_file = Path(values.get("LOCK_FILE", resolved_run_dir / "agent.lock")).expanduser()
+    run_record_dir = Path(values.get("RUN_RECORD_DIR", repo_path / "var" / "runs")).expanduser()
     return AgentConfig(
         repo_path=repo_path,
         owner_repo=values["OWNER_REPO"],
@@ -83,12 +92,20 @@ def load_config(path: str | Path) -> AgentConfig:
         label_running=values["LABEL_RUNNING"],
         label_done=values["LABEL_DONE"],
         label_failed=values["LABEL_FAILED"],
+        label_no_changes=values.get("LABEL_NO_CHANGES", "agent-no-changes"),
+        label_blocked=values.get("LABEL_BLOCKED", "agent-blocked"),
         ollama_api_base=values["OLLAMA_API_BASE"].rstrip("/"),
         aider_extra_args=tuple(_split_args(values.get("AIDER_EXTRA_ARGS", ""))),
         log_dir=_resolve_path(log_dir, repo_path),
         run_dir=resolved_run_dir,
         poll_interval_seconds=poll_interval_seconds,
         lock_file=_resolve_path(lock_file, repo_path),
+        run_record_dir=_resolve_path(run_record_dir, repo_path),
+        agent_host_label=values.get("AGENT_HOST_LABEL", "Mac Studio"),
+        comment_on_start=_bool(values.get("COMMENT_ON_START", "true"), "COMMENT_ON_START"),
+        comment_on_success=_bool(values.get("COMMENT_ON_SUCCESS", "true"), "COMMENT_ON_SUCCESS"),
+        comment_on_failure=_bool(values.get("COMMENT_ON_FAILURE", "true"), "COMMENT_ON_FAILURE"),
+        comment_on_no_changes=_bool(values.get("COMMENT_ON_NO_CHANGES", "true"), "COMMENT_ON_NO_CHANGES"),
     )
 
 
@@ -116,3 +133,12 @@ def _positive_int(value: str, key: str) -> int:
     if parsed <= 0:
         raise ConfigError(f"{key} must be greater than zero")
     return parsed
+
+
+def _bool(value: str, key: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ConfigError(f"{key} must be true or false")

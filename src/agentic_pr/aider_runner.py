@@ -32,12 +32,12 @@ Rules:
 """
 
 
-def run_aider(config: AgentConfig, issue: Issue) -> AiderResult:
+def run_aider(config: AgentConfig, issue: Issue, run_id: str) -> AiderResult:
     config.log_dir.mkdir(parents=True, exist_ok=True)
     config.run_dir.mkdir(parents=True, exist_ok=True)
 
-    prompt_file = config.run_dir / f"issue-{issue.number}-prompt.md"
-    log_file = config.log_dir / f"{config.owner_repo.replace('/', '_')}-issue-{issue.number}.log"
+    prompt_file = config.run_dir / f"{run_id}-prompt.md"
+    log_file = config.log_dir / f"{run_id}.log"
     prompt_file.write_text(build_prompt(issue))
 
     args = [

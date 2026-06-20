@@ -148,3 +148,76 @@ make test
 ```
 
 The tests cover local Python helpers and do not call GitHub, Aider, or Ollama.
+
+## GitHub Observability
+
+Rev 05 makes each picked-up issue explain itself from GitHub.
+
+When the agent starts work, it now creates a run ID like:
+
+```text
+run-YYYYMMDD-HHMMSS-issue-<issue_number>
+```
+
+That run ID appears in issue comments, the PR body, local log filenames, and local JSON records.
+
+Status labels used by the agent:
+
+```text
+agent-run
+agent-running
+agent-pr-created
+agent-failed
+agent-no-changes
+agent-blocked
+```
+
+Run records are written locally to:
+
+```text
+/Users/vsinghthiara/Developer/Learning/agentic-pr/var/runs
+```
+
+Useful local commands:
+
+```sh
+make list-runs CONFIG=config/agent-test.env
+make show-last-run CONFIG=config/agent-test.env
+```
+
+The issue receives short comments for:
+
+1. Agent started.
+2. Aider is about to run with the local Ollama model.
+3. PR created.
+4. No file changes produced.
+5. Failure, including stage and short error summary.
+
+The comments intentionally do not paste full logs into GitHub. Full logs stay local under `logs/`.
+
+The PR body includes the linked issue, run ID, model, base branch, agent branch, host label, validation reminder, no-auto-merge note, and local log path.
+
+Rev 05 acceptance test:
+
+```sh
+make test
+make doctor CONFIG=config/agent-test.env
+make ensure-labels CONFIG=config/agent-test.env
+make status-service
+```
+
+Then create a GitHub issue in `veerthiara/agent-test-local-ai` with label `agent-run`.
+
+Title:
+
+```text
+Agent test: add min function
+```
+
+Body:
+
+```text
+Edit calc.py to add a min_value(a, b) function that returns the smaller value. Keep it simple.
+```
+
+After the service picks it up, confirm GitHub issue comments, PR metadata, and a local JSON file in `var/runs/`.
