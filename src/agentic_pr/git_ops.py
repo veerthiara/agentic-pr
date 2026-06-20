@@ -34,6 +34,47 @@ def has_changes(repo_path: Path) -> bool:
     return bool(run(["git", "status", "--porcelain"], cwd=repo_path).stdout.strip())
 
 
+def changed_files(repo_path: Path) -> list[str]:
+    files: list[str] = []
+    for line in run(["git", "status", "--porcelain"], cwd=repo_path).stdout.splitlines():
+        if not line:
+            continue
+        path = line[3:]
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1]
+        files.append(path)
+    return sorted(set(files))
+
+
+def diff_line_count(repo_path: Path) -> int:
+    count = 0
+    result = run(["git", "diff", "--numstat"], cwd=repo_path)
+    for line in result.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 3:
+            continue
+        for value in parts[:2]:
+            if value.isdigit():
+                count += int(value)
+    untracked = set(run(["git", "ls-files", "--others", "--exclude-standard"], cwd=repo_path).stdout.splitlines())
+    for path in changed_files(repo_path):
+        full_path = repo_path / path
+        if full_path.exists() and path in untracked:
+            try:
+                count += len(full_path.read_text(errors="ignore").splitlines())
+            except OSError:
+                count += 1
+    return count
+
+
+def diff_summary(repo_path: Path, max_lines: int = 40) -> str:
+    output = run(["git", "diff", "--stat"], cwd=repo_path).stdout.strip()
+    lines = output.splitlines()
+    if len(lines) > max_lines:
+        return "\n".join(lines[:max_lines] + ["..."])
+    return output
+
+
 def commit_all(repo_path: Path, message: str) -> None:
     run(["git", "add", "-A"], cwd=repo_path)
     run(["git", "commit", "-m", message], cwd=repo_path)

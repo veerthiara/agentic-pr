@@ -25,6 +25,7 @@ REV02: short imperative message
 REV03: short imperative message
 REV04: short imperative message
 REV05: short imperative message
+REV06: short imperative message
 ```
 
-Use the current revision prefix for agent-created commits. For this revision, use `REV05: <some message>`.
+Use the current revision prefix for agent-created commits. For this revision, use `REV06: <some message>`.

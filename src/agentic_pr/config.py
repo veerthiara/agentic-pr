@@ -42,6 +42,14 @@ class AgentConfig:
     comment_on_success: bool
     comment_on_failure: bool
     comment_on_no_changes: bool
+    aider_timeout_seconds: int
+    max_changed_files: int
+    max_diff_lines: int
+    require_aiderignore: bool
+    blocked_path_patterns: tuple[str, ...]
+    test_cmd: str
+    lint_cmd: str
+    stale_lock_seconds: int
 
 
 class ConfigError(ValueError):
@@ -78,11 +86,10 @@ def load_config(path: str | Path) -> AgentConfig:
     repo_path = Path(values["REPO_PATH"]).expanduser().resolve()
     log_dir = Path(values.get("LOG_DIR", repo_path / "logs")).expanduser()
     run_dir = Path(values.get("RUN_DIR", repo_path / "var" / "run")).expanduser()
-    poll_interval_seconds = _positive_int(values.get("POLL_INTERVAL_SECONDS", "300"), "POLL_INTERVAL_SECONDS")
-
     resolved_run_dir = _resolve_path(run_dir, repo_path)
     lock_file = Path(values.get("LOCK_FILE", resolved_run_dir / "agent.lock")).expanduser()
     run_record_dir = Path(values.get("RUN_RECORD_DIR", repo_path / "var" / "runs")).expanduser()
+
     return AgentConfig(
         repo_path=repo_path,
         owner_repo=values["OWNER_REPO"],
@@ -98,7 +105,7 @@ def load_config(path: str | Path) -> AgentConfig:
         aider_extra_args=tuple(_split_args(values.get("AIDER_EXTRA_ARGS", ""))),
         log_dir=_resolve_path(log_dir, repo_path),
         run_dir=resolved_run_dir,
-        poll_interval_seconds=poll_interval_seconds,
+        poll_interval_seconds=_positive_int(values.get("POLL_INTERVAL_SECONDS", "300"), "POLL_INTERVAL_SECONDS"),
         lock_file=_resolve_path(lock_file, repo_path),
         run_record_dir=_resolve_path(run_record_dir, repo_path),
         agent_host_label=values.get("AGENT_HOST_LABEL", "Mac Studio"),
@@ -106,6 +113,14 @@ def load_config(path: str | Path) -> AgentConfig:
         comment_on_success=_bool(values.get("COMMENT_ON_SUCCESS", "true"), "COMMENT_ON_SUCCESS"),
         comment_on_failure=_bool(values.get("COMMENT_ON_FAILURE", "true"), "COMMENT_ON_FAILURE"),
         comment_on_no_changes=_bool(values.get("COMMENT_ON_NO_CHANGES", "true"), "COMMENT_ON_NO_CHANGES"),
+        aider_timeout_seconds=_positive_int(values.get("AIDER_TIMEOUT_SECONDS", "1800"), "AIDER_TIMEOUT_SECONDS"),
+        max_changed_files=_positive_int(values.get("MAX_CHANGED_FILES", "20"), "MAX_CHANGED_FILES"),
+        max_diff_lines=_positive_int(values.get("MAX_DIFF_LINES", "800"), "MAX_DIFF_LINES"),
+        require_aiderignore=_bool(values.get("REQUIRE_AIDERIGNORE", "true"), "REQUIRE_AIDERIGNORE"),
+        blocked_path_patterns=tuple(_csv(values.get("BLOCKED_PATH_PATTERNS", ".env,.env.*,*.pem,*.key,*.p12,*.pfx,secrets/*,credentials/*,node_modules/*,.venv/*,dist/*,build/*,**pycache**/*"))),
+        test_cmd=values.get("TEST_CMD", ""),
+        lint_cmd=values.get("LINT_CMD", ""),
+        stale_lock_seconds=_positive_int(values.get("STALE_LOCK_SECONDS", "7200"), "STALE_LOCK_SECONDS"),
     )
 
 
@@ -117,6 +132,10 @@ def _unquote(value: str) -> str:
 
 def _split_args(value: str) -> list[str]:
     return shlex.split(value)
+
+
+def _csv(value: str) -> list[str]:
+    return [part.strip() for part in value.split(",") if part.strip()]
 
 
 def _resolve_path(path: Path, repo_path: Path) -> Path:

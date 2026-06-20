@@ -60,6 +60,14 @@ COMMENT_ON_SUCCESS=false
 COMMENT_ON_FAILURE=true
 COMMENT_ON_NO_CHANGES=true
 AIDER_EXTRA_ARGS=--no-show-model-warnings --message "hello world"
+AIDER_TIMEOUT_SECONDS=1800
+MAX_CHANGED_FILES=20
+MAX_DIFF_LINES=800
+REQUIRE_AIDERIGNORE=true
+BLOCKED_PATH_PATTERNS=.env,secrets/*
+TEST_CMD=python -m unittest
+LINT_CMD=python -m py_compile calc.py
+STALE_LOCK_SECONDS=7200
 """
             )
 
@@ -87,6 +95,14 @@ AIDER_EXTRA_ARGS=--no-show-model-warnings --message "hello world"
             self.assertTrue(config.comment_on_failure)
             self.assertTrue(config.comment_on_no_changes)
             self.assertEqual(config.aider_extra_args, ("--no-show-model-warnings", "--message", "hello world"))
+            self.assertEqual(config.aider_timeout_seconds, 1800)
+            self.assertEqual(config.max_changed_files, 20)
+            self.assertEqual(config.max_diff_lines, 800)
+            self.assertTrue(config.require_aiderignore)
+            self.assertEqual(config.blocked_path_patterns, (".env", "secrets/*"))
+            self.assertEqual(config.test_cmd, "python -m unittest")
+            self.assertEqual(config.lint_cmd, "python -m py_compile calc.py")
+            self.assertEqual(config.stale_lock_seconds, 7200)
 
     def test_load_config_rejects_invalid_poll_interval(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

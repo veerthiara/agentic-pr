@@ -8,7 +8,7 @@ from agentic_pr.poller import poll_once
 
 
 class PollerTests(unittest.TestCase):
-    def test_poll_once_runs_one_iteration_and_releases_lock(self) -> None:
+    def test_poll_once_runs_one_iteration(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             config = _config(Path(tmp))
             calls = []
@@ -21,27 +21,20 @@ class PollerTests(unittest.TestCase):
 
             self.assertEqual(result, RunResult("no_issue", "No issue"))
             self.assertEqual(calls, [config])
-            self.assertFalse(config.lock_file.exists())
             self.assertIn("no_issue: No issue", (config.log_dir / "poller.log").read_text())
 
-    def test_poll_once_skips_when_lock_exists(self) -> None:
+    def test_poll_once_handles_unexpected_exception(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             config = _config(Path(tmp))
-            config.lock_file.parent.mkdir(parents=True)
-            config.lock_file.write_text("pid=123\n")
-            calls = []
             sleeps = []
 
             def fake_run_once(received_config: AgentConfig) -> RunResult:
-                calls.append(received_config)
-                return RunResult("pr_created", "Created")
+                raise RuntimeError("boom")
 
             result = poll_once(config, run_once_fn=fake_run_once, sleep_fn=sleeps.append)
 
-            self.assertIsNone(result)
-            self.assertEqual(calls, [])
+            self.assertEqual(result.status, "failed")
             self.assertEqual(sleeps, [config.poll_interval_seconds])
-            self.assertTrue(config.lock_file.exists())
 
 
 def _config(root: Path) -> AgentConfig:
@@ -68,4 +61,12 @@ def _config(root: Path) -> AgentConfig:
         comment_on_success=True,
         comment_on_failure=True,
         comment_on_no_changes=True,
+        aider_timeout_seconds=1800,
+        max_changed_files=20,
+        max_diff_lines=800,
+        require_aiderignore=True,
+        blocked_path_patterns=(".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx", "secrets/*", "credentials/*", "node_modules/*", ".venv/*", "dist/*", "build/*", "**pycache**/*"),
+        test_cmd="",
+        lint_cmd="",
+        stale_lock_seconds=7200,
     )

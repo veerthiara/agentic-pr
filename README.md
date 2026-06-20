@@ -221,3 +221,37 @@ Edit calc.py to add a min_value(a, b) function that returns the smaller value. K
 ```
 
 After the service picks it up, confirm GitHub issue comments, PR metadata, and a local JSON file in `var/runs/`.
+
+## Safety Guardrails
+
+Rev 06 adds guardrails before using the agent on real repositories.
+
+The agent now blocks a run before commit, push, or PR creation when:
+
+- A changed file matches `BLOCKED_PATH_PATTERNS`.
+- Changed file count exceeds `MAX_CHANGED_FILES`.
+- Diff line count exceeds `MAX_DIFF_LINES`.
+- `.aiderignore` is required but missing.
+- Aider exceeds `AIDER_TIMEOUT_SECONDS`.
+- Optional `LINT_CMD` or `TEST_CMD` fails.
+
+Blocked runs receive the `agent-blocked` label and a short GitHub issue comment with the run ID and reason. Failed runs receive `agent-failed`. Full logs stay local.
+
+Relevant config:
+
+```env
+AIDER_TIMEOUT_SECONDS=1800
+MAX_CHANGED_FILES=20
+MAX_DIFF_LINES=800
+REQUIRE_AIDERIGNORE=true
+BLOCKED_PATH_PATTERNS=.env,.env.*,*.pem,*.key,*.p12,*.pfx,secrets/*,credentials/*,node_modules/*,.venv/*,dist/*,build/*,**pycache**/*
+TEST_CMD=
+LINT_CMD=
+STALE_LOCK_SECONDS=7200
+```
+
+Use `TEST_CMD` and `LINT_CMD` for repository-specific validation. For Rev 06, validation failure prevents pushing and PR creation.
+
+Stale locks older than `STALE_LOCK_SECONDS` are removed automatically. Active locks still prevent duplicate runs.
+
+Before testing Rev 06, create `/Users/vsinghthiara/Developer/Learning/agent-test/.aiderignore` with the blocked path list above.

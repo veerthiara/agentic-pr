@@ -99,3 +99,40 @@ def short_error(exc: BaseException, max_length: int = 500) -> str:
     if len(text) <= max_length:
         return text
     return text[: max_length - 3] + "..."
+
+
+def blocked_comment(run_id: str, reason: str, details: list[str]) -> str:
+    detail_text = "; ".join(details[:3])
+    return (
+        "Local agent blocked this run for safety.\n\n"
+        f"Run ID: `{run_id}`\n"
+        f"Reason: `{reason}`\n"
+        f"Details: {detail_text}"
+    )
+
+
+def preflight_blocked_comment(run_id: str, reason: str, details: list[str]) -> str:
+    detail_text = "; ".join(details[:3])
+    return (
+        "Local agent blocked this run during preflight.\n\n"
+        f"Run ID: `{run_id}`\n"
+        f"Reason: `{reason}`\n"
+        f"Details: {detail_text}"
+    )
+
+
+def aider_timeout_comment(run_id: str, timeout_seconds: int) -> str:
+    return (
+        "Local agent failed because Aider timed out.\n\n"
+        f"Run ID: `{run_id}`\n"
+        f"Timeout: `{timeout_seconds}` seconds"
+    )
+
+
+def validation_failed_comment(run_id: str, command_name: str, error_summary: str) -> str:
+    return (
+        "Local agent failed validation before creating a PR.\n\n"
+        f"Run ID: `{run_id}`\n"
+        f"Command: `{command_name}`\n"
+        f"Error: {error_summary}"
+    )

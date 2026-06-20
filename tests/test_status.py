@@ -12,6 +12,10 @@ from agentic_pr.status import (
     pr_created_comment,
     start_comment,
     status_labels,
+    blocked_comment,
+    preflight_blocked_comment,
+    aider_timeout_comment,
+    validation_failed_comment,
 )
 
 
@@ -33,6 +37,10 @@ class StatusTests(unittest.TestCase):
         self.assertIn("https://example.test/pr/1", pr_created_comment("run-1", "https://example.test/pr/1", "agent/branch"))
         self.assertIn("no file changes", no_changes_comment("run-1"))
         self.assertIn("Stage: `run_aider`", failed_comment("run-1", "run_aider", "boom"))
+        self.assertIn("run-1", blocked_comment("run-1", "blocked_path", ["Blocked path: .env"]))
+        self.assertIn("missing_aiderignore", preflight_blocked_comment("run-1", "missing_aiderignore", ["missing"]))
+        self.assertIn("1800", aider_timeout_comment("run-1", 1800))
+        self.assertIn("lint", validation_failed_comment("run-1", "lint", "failed"))
 
     def test_pr_body_generation(self) -> None:
         config = _config()
@@ -81,4 +89,12 @@ def _config() -> AgentConfig:
         comment_on_success=True,
         comment_on_failure=True,
         comment_on_no_changes=True,
+        aider_timeout_seconds=1800,
+        max_changed_files=20,
+        max_diff_lines=800,
+        require_aiderignore=True,
+        blocked_path_patterns=(".env", "secrets/*"),
+        test_cmd="",
+        lint_cmd="",
+        stale_lock_seconds=7200,
     )

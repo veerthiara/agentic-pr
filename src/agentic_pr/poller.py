@@ -6,7 +6,6 @@ from pathlib import Path
 from time import sleep
 
 from agentic_pr.config import AgentConfig
-from agentic_pr.lock import FileLock, LockAlreadyHeld
 from agentic_pr.orchestrator import RunResult, run_once
 
 
@@ -26,17 +25,6 @@ def poll_forever(config: AgentConfig) -> None:
 
 
 def poll_once(config: AgentConfig, *, run_once_fn: RunOnce = run_once, sleep_fn: SleepFn | None = None) -> RunResult | None:
-    lock = FileLock(config.lock_file)
-    try:
-        lock.acquire()
-    except LockAlreadyHeld as exc:
-        message = f"Skipping cycle: {exc}"
-        print(message)
-        _log(config, message)
-        if sleep_fn:
-            sleep_fn(config.poll_interval_seconds)
-        return None
-
     try:
         result = run_once_fn(config)
         _log(config, f"{result.status}: {result.message}")
@@ -46,9 +34,9 @@ def poll_once(config: AgentConfig, *, run_once_fn: RunOnce = run_once, sleep_fn:
         message = f"Polling cycle failed unexpectedly: {exc}"
         _log(config, message)
         print(message)
+        if sleep_fn:
+            sleep_fn(config.poll_interval_seconds)
         return RunResult("failed", message)
-    finally:
-        lock.release()
 
 
 def print_startup(config: AgentConfig) -> None:

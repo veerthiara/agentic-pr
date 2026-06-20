@@ -12,6 +12,7 @@ from agentic_pr.github_ops import Issue
 class AiderResult:
     exit_code: int
     log_file: Path
+    timed_out: bool = False
 
 
 def build_prompt(issue: Issue) -> str:
@@ -51,6 +52,9 @@ def run_aider(config: AgentConfig, issue: Issue, run_id: str) -> AiderResult:
         str(prompt_file),
         *config.aider_extra_args,
     ]
-    result = run(args, cwd=config.repo_path, check=False)
-    log_file.write_text(result.stdout + result.stderr)
-    return AiderResult(exit_code=result.returncode, log_file=log_file)
+    result = run(args, cwd=config.repo_path, check=False, timeout=config.aider_timeout_seconds)
+    timeout_note = ""
+    if result.timed_out:
+        timeout_note = f"\nAider timed out after {config.aider_timeout_seconds} seconds.\n"
+    log_file.write_text(result.stdout + result.stderr + timeout_note)
+    return AiderResult(exit_code=result.returncode, log_file=log_file, timed_out=result.timed_out)

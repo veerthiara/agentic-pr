@@ -1,4 +1,6 @@
+import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -29,3 +31,18 @@ class FileLockTests(unittest.TestCase):
                     second.acquire()
             finally:
                 first.release()
+
+
+    def test_stale_lock_is_replaced(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            lock_path = Path(tmp) / "agent.lock"
+            lock_path.write_text("old")
+            old_time = time.time() - 10
+            os.utime(lock_path, (old_time, old_time))
+
+            lock = FileLock(lock_path, stale_seconds=1, run_id="run-new")
+            lock.acquire()
+            try:
+                self.assertIn("run-new", lock_path.read_text())
+            finally:
+                lock.release()
