@@ -73,6 +73,8 @@ def pr_body(
     branch: str,
     log_file: str,
     aider_exit_code: int,
+    planner_enabled: bool = False,
+    plan_summary: str | None = None,
 ) -> str:
     return (
         "This PR was created by the local Mac Studio agent.\n\n"
@@ -83,7 +85,9 @@ def pr_body(
         f"- Base branch: `{config.base_branch}`\n"
         f"- Agent branch: `{branch}`\n"
         f"- Agent host: `{config.agent_host_label}`\n"
-        f"- Aider exit code: `{aider_exit_code}`\n\n"
+        f"- Aider exit code: `{aider_exit_code}`\n"
+        f"- Planner enabled: `{planner_enabled}`\n"
+        f"- Plan summary: {plan_summary or 'Not available'}\n\n"
         "Validation reminder:\n"
         "- Review the diff carefully before merging.\n"
         "- Run any project tests that matter for this change.\n"
@@ -136,3 +140,28 @@ def validation_failed_comment(run_id: str, command_name: str, error_summary: str
         f"Command: `{command_name}`\n"
         f"Error: {error_summary}"
     )
+
+
+
+def planner_started_comment(run_id: str) -> str:
+    return f"Planning repository changes before implementation.\n\nRun ID: `{run_id}`"
+
+
+def planner_completed_comment(run_id: str, summary: str | None) -> str:
+    return (
+        "Planner completed.\n\n"
+        f"Run ID: `{run_id}`\n"
+        f"Summary: {summary or 'No summary provided.'}"
+    )
+
+
+def planner_failed_comment(run_id: str, error: str | None) -> str:
+    return (
+        "Planner failed, but implementation will continue with the raw issue prompt.\n\n"
+        f"Run ID: `{run_id}`\n"
+        f"Reason: {error or 'unknown'}"
+    )
+
+
+def implementation_started_comment(run_id: str) -> str:
+    return f"Starting implementation with the final Aider prompt.\n\nRun ID: `{run_id}`"

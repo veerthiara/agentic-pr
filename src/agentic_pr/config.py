@@ -50,6 +50,12 @@ class AgentConfig:
     test_cmd: str
     lint_cmd: str
     stale_lock_seconds: int
+    enable_planner: bool
+    planner_model: str
+    repo_context_max_files: int
+    repo_context_max_bytes: int
+    planner_timeout_seconds: int
+    comment_plan: bool
 
 
 class ConfigError(ValueError):
@@ -121,6 +127,12 @@ def load_config(path: str | Path) -> AgentConfig:
         test_cmd=values.get("TEST_CMD", ""),
         lint_cmd=values.get("LINT_CMD", ""),
         stale_lock_seconds=_positive_int(values.get("STALE_LOCK_SECONDS", "7200"), "STALE_LOCK_SECONDS"),
+        enable_planner=_bool(values.get("ENABLE_PLANNER", "true"), "ENABLE_PLANNER"),
+        planner_model=values.get("PLANNER_MODEL", values["MODEL"]),
+        repo_context_max_files=_positive_int(values.get("REPO_CONTEXT_MAX_FILES", "80"), "REPO_CONTEXT_MAX_FILES"),
+        repo_context_max_bytes=_positive_int(values.get("REPO_CONTEXT_MAX_BYTES", "120000"), "REPO_CONTEXT_MAX_BYTES"),
+        planner_timeout_seconds=_positive_int(values.get("PLANNER_TIMEOUT_SECONDS", "900"), "PLANNER_TIMEOUT_SECONDS"),
+        comment_plan=_bool(values.get("COMMENT_PLAN", "true"), "COMMENT_PLAN"),
     )
 
 

@@ -68,6 +68,12 @@ BLOCKED_PATH_PATTERNS=.env,secrets/*
 TEST_CMD=python -m unittest
 LINT_CMD=python -m py_compile calc.py
 STALE_LOCK_SECONDS=7200
+ENABLE_PLANNER=true
+PLANNER_MODEL=ollama/qwen3-coder:30b
+REPO_CONTEXT_MAX_FILES=80
+REPO_CONTEXT_MAX_BYTES=120000
+PLANNER_TIMEOUT_SECONDS=900
+COMMENT_PLAN=false
 """
             )
 
@@ -103,6 +109,12 @@ STALE_LOCK_SECONDS=7200
             self.assertEqual(config.test_cmd, "python -m unittest")
             self.assertEqual(config.lint_cmd, "python -m py_compile calc.py")
             self.assertEqual(config.stale_lock_seconds, 7200)
+            self.assertTrue(config.enable_planner)
+            self.assertEqual(config.planner_model, "ollama/qwen3-coder:30b")
+            self.assertEqual(config.repo_context_max_files, 80)
+            self.assertEqual(config.repo_context_max_bytes, 120000)
+            self.assertEqual(config.planner_timeout_seconds, 900)
+            self.assertFalse(config.comment_plan)
 
     def test_load_config_rejects_invalid_poll_interval(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -20,6 +20,13 @@ class RunRecord:
     finished_at: str | None
     log_file: str | None
     error_summary: str | None
+    planner_enabled: bool = False
+    planner_status: str | None = None
+    planner_output_file: str | None = None
+    plan_summary: str | None = None
+    planned_files_to_modify: list[str] | None = None
+    planned_files_to_create: list[str] | None = None
+    planned_test_plan: str | None = None
 
 
 def write_run_record(directory: Path, record: RunRecord) -> Path:

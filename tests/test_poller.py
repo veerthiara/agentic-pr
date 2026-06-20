@@ -69,4 +69,10 @@ def _config(root: Path) -> AgentConfig:
         test_cmd="",
         lint_cmd="",
         stale_lock_seconds=7200,
+        enable_planner=True,
+        planner_model="ollama/qwen3-coder:30b",
+        repo_context_max_files=80,
+        repo_context_max_bytes=120000,
+        planner_timeout_seconds=900,
+        comment_plan=True,
     )

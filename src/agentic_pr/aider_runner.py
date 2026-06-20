@@ -6,6 +6,7 @@ from pathlib import Path
 from agentic_pr.command import run
 from agentic_pr.config import AgentConfig
 from agentic_pr.github_ops import Issue
+from agentic_pr.prompt_builder import build_implementation_prompt
 
 
 @dataclass(frozen=True)
@@ -16,30 +17,16 @@ class AiderResult:
 
 
 def build_prompt(issue: Issue) -> str:
-    return f"""You are a local coding agent working in this git repository.
-
-GitHub issue: #{issue.number}
-Title: {issue.title}
-
-User task:
-{issue.body}
-
-Rules:
-- Make the smallest safe code change that satisfies the issue.
-- Do not modify secrets, .env files, credentials, or unrelated generated files.
-- Keep the solution simple and readable.
-- Add or update tests only if appropriate for this repo.
-- Do not merge anything. Only make code changes for a PR.
-"""
+    return build_implementation_prompt(issue=issue, run_id="manual", planner_result=None)
 
 
-def run_aider(config: AgentConfig, issue: Issue, run_id: str) -> AiderResult:
+def run_aider(config: AgentConfig, issue: Issue, run_id: str, prompt: str | None = None) -> AiderResult:
     config.log_dir.mkdir(parents=True, exist_ok=True)
     config.run_dir.mkdir(parents=True, exist_ok=True)
 
     prompt_file = config.run_dir / f"{run_id}-prompt.md"
     log_file = config.log_dir / f"{run_id}.log"
-    prompt_file.write_text(build_prompt(issue))
+    prompt_file.write_text(prompt or build_prompt(issue))
 
     args = [
         "aider",

@@ -23,6 +23,13 @@ class RunRecordTests(unittest.TestCase):
                 finished_at="2026-06-19T15:05:05",
                 log_file="/tmp/run.log",
                 error_summary=None,
+                planner_enabled=True,
+                planner_status="completed",
+                planner_output_file="/tmp/plan.md",
+                plan_summary="Do the thing",
+                planned_files_to_modify=["README.md"],
+                planned_files_to_create=["main.py"],
+                planned_test_plan="pytest",
             )
 
             path = write_run_record(Path(tmp), record)
@@ -31,5 +38,8 @@ class RunRecordTests(unittest.TestCase):
             self.assertEqual(path.name, "run-20260619-150405-issue-7.json")
             self.assertEqual(data["run_id"], record.run_id)
             self.assertEqual(data["status"], "pr_created")
+            self.assertTrue(data["planner_enabled"])
+            self.assertEqual(data["plan_summary"], "Do the thing")
+            self.assertEqual(data["planned_files_to_create"], ["main.py"])
             self.assertEqual(list_run_records(Path(tmp)), [path])
             self.assertEqual(latest_run_record(Path(tmp)), path)

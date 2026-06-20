@@ -255,3 +255,36 @@ Use `TEST_CMD` and `LINT_CMD` for repository-specific validation. For Rev 06, va
 Stale locks older than `STALE_LOCK_SECONDS` are removed automatically. Active locks still prevent duplicate runs.
 
 Before testing Rev 06, create `/Users/vsinghthiara/Developer/Learning/agent-test/.aiderignore` with the blocked path list above.
+
+## Planner Stage
+
+Rev 07 adds a planner and repo-context stage before Aider runs. This helps broader tasks where the agent needs to understand the repo shape, identify files to modify or create, and produce a concrete implementation plan.
+
+Planner flow:
+
+```text
+issue -> repo context -> local Ollama planner -> concise GitHub plan comment -> planner-enhanced Aider prompt
+```
+
+Config:
+
+```env
+ENABLE_PLANNER=true
+PLANNER_MODEL=ollama/qwen3-coder:30b
+REPO_CONTEXT_MAX_FILES=80
+REPO_CONTEXT_MAX_BYTES=120000
+PLANNER_TIMEOUT_SECONDS=900
+COMMENT_PLAN=true
+```
+
+Set `ENABLE_PLANNER=false` to return to the raw issue-to-Aider behavior. Tune `REPO_CONTEXT_MAX_FILES` and `REPO_CONTEXT_MAX_BYTES` if the planner needs more or less context.
+
+Planner output is stored locally under:
+
+```text
+var/run/<run_id>-planner.md
+```
+
+GitHub issue comments stay short. You should see comments for planner started/completed, planner failed with fallback, and implementation started.
+
+The run record in `var/runs/` now includes planner status, planner output path, plan summary, planned files to modify/create, and planned test plan.

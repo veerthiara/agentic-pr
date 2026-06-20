@@ -16,6 +16,10 @@ from agentic_pr.status import (
     preflight_blocked_comment,
     aider_timeout_comment,
     validation_failed_comment,
+    planner_started_comment,
+    planner_completed_comment,
+    planner_failed_comment,
+    implementation_started_comment,
 )
 
 
@@ -41,6 +45,10 @@ class StatusTests(unittest.TestCase):
         self.assertIn("missing_aiderignore", preflight_blocked_comment("run-1", "missing_aiderignore", ["missing"]))
         self.assertIn("1800", aider_timeout_comment("run-1", 1800))
         self.assertIn("lint", validation_failed_comment("run-1", "lint", "failed"))
+        self.assertIn("run-1", planner_started_comment("run-1"))
+        self.assertIn("summary", planner_completed_comment("run-1", "summary"))
+        self.assertIn("continue", planner_failed_comment("run-1", "timeout"))
+        self.assertIn("run-1", implementation_started_comment("run-1"))
 
     def test_pr_body_generation(self) -> None:
         config = _config()
@@ -97,4 +105,10 @@ def _config() -> AgentConfig:
         test_cmd="",
         lint_cmd="",
         stale_lock_seconds=7200,
+        enable_planner=True,
+        planner_model="ollama/qwen3-coder:30b",
+        repo_context_max_files=80,
+        repo_context_max_bytes=120000,
+        planner_timeout_seconds=900,
+        comment_plan=True,
     )

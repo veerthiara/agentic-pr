@@ -39,4 +39,10 @@ def _config(root: Path) -> AgentConfig:
         ollama_api_base="http://localhost:11434", aider_extra_args=(), log_dir=root / "logs", run_dir=root / "run", poll_interval_seconds=300, lock_file=root / "run" / "agent.lock", run_record_dir=root / "runs",
         agent_host_label="Mac Studio", comment_on_start=True, comment_on_success=True, comment_on_failure=True, comment_on_no_changes=True,
         aider_timeout_seconds=1, max_changed_files=20, max_diff_lines=800, require_aiderignore=True, blocked_path_patterns=(".env",), test_cmd="", lint_cmd="", stale_lock_seconds=7200,
+        enable_planner=True,
+        planner_model="ollama/qwen3-coder:30b",
+        repo_context_max_files=80,
+        repo_context_max_bytes=120000,
+        planner_timeout_seconds=900,
+        comment_plan=True,
     )
