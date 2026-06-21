@@ -8,6 +8,7 @@ from agentic_pr.config import AgentConfig
 from agentic_pr.github_ops import Issue
 from agentic_pr.planner import ollama_cli_model, run_planner
 from agentic_pr.repo_context import RepoContext
+from agentic_pr.repo_instructions import RepoInstructions
 
 
 class PlannerTests(unittest.TestCase):
@@ -19,7 +20,7 @@ class PlannerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             config = _config(Path(tmp))
             issue = Issue(1, "Title", "Body", "now")
-            context = RepoContext(Path(tmp), "main", [], [], [], {})
+            context = RepoContext(Path(tmp), "main", [], [], [], {}, [])
             with patch("agentic_pr.planner.run", return_value=CommandResult(["ollama"], 124, "partial", "", True)):
                 result = run_planner(config, issue, context, "run-1")
 
@@ -31,7 +32,7 @@ class PlannerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             config = _config(Path(tmp))
             issue = Issue(1, "Title", "Body", "now")
-            context = RepoContext(Path(tmp), "main", [], [], [], {})
+            context = RepoContext(Path(tmp), "main", [], [], [], {}, [])
             output = """Summary\nBuild FastAPI app.\nFiles likely to modify\n- README.md\nFiles likely to create\n- main.py\nTest plan\nRun pytest.\n"""
             with patch("agentic_pr.planner.run", return_value=CommandResult(["ollama"], 0, output, "", False)):
                 result = run_planner(config, issue, context, "run-1")
@@ -45,7 +46,7 @@ class PlannerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             config = _config(Path(tmp))
             issue = Issue(1, "Title", "Body", "now")
-            context = RepoContext(Path(tmp), "main", [], [], [], {})
+            context = RepoContext(Path(tmp), "main", [], [], [], {}, [])
             noisy = "\x1b[?2026h\x1b[1Gpulling manifest ⠋ \x1b[K\x1b[?2026l\nError: pull model manifest: file does not exist"
             with patch("agentic_pr.planner.run", return_value=CommandResult(["ollama"], 1, "", noisy, False)):
                 result = run_planner(config, issue, context, "run-2")
@@ -53,6 +54,25 @@ class PlannerTests(unittest.TestCase):
             self.assertFalse(result.ok)
             self.assertNotIn("\x1b", result.error or "")
             self.assertIn("file does not exist", result.error or "")
+
+    def test_planner_includes_repo_instructions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = _config(Path(tmp))
+            issue = Issue(1, "Title", "Body", "now")
+            context = RepoContext(Path(tmp), "main", [], [], [], {}, [])
+            instructions = RepoInstructions(
+                instructions_text="Test instructions",
+                safety_text="Test safety",
+                examples_text="Test examples"
+            )
+            output = "Summary\nDid a thing.\n"
+            with patch("agentic_pr.planner.run", return_value=CommandResult(["ollama"], 0, output, "", False)) as mock_run:
+                run_planner(config, issue, context, "run-1", repo_instructions=instructions)
+                
+            input_text = mock_run.call_args.kwargs["input_text"]
+            self.assertIn("Project Instructions:\nTest instructions", input_text)
+            self.assertIn("Safety Rules:\nTest safety", input_text)
+            self.assertIn("Examples:\nTest examples", input_text)
 
 
 def _config(root: Path) -> AgentConfig:
@@ -78,4 +98,7 @@ def _config(root: Path) -> AgentConfig:
         ci_log_max_bytes=40000,
         ci_include_successful_checks=False,
         ci_require_failed_checks=False,
+        enable_repo_instructions=True,
+        repo_instructions_dir=".agentic-pr",
+        repo_instructions_max_bytes=40000,
     )

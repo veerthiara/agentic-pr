@@ -122,3 +122,33 @@ class RunRecordTests(unittest.TestCase):
             self.assertIn("lint failed", data["ci_log_excerpt"])
             self.assertEqual(data["ci_log_excerpt_file"], "/tmp/run-123-ci-context.md")
             self.assertEqual(data["ci_warnings"], ["Warning: logs truncated"])
+
+    def test_run_record_includes_repo_instructions_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            record = RunRecord(
+                run_id="run-456",
+                issue_number=7,
+                issue_title="Add average function",
+                owner_repo="octo/repo",
+                model="ollama/qwen3-coder:30b",
+                base_branch="main",
+                agent_branch="agent/issue-7-456",
+                status="pr_created",
+                pr_url="https://github.com/octo/repo/pull/7",
+                started_at="2024-01-01T10:00:00",
+                finished_at="2024-01-01T10:05:00",
+                log_file="/tmp/run.log",
+                error_summary=None,
+                repo_instructions_enabled=True,
+                repo_instruction_files=["instructions.md", "safety.md"],
+                repo_test_cmd_source="commands.env",
+                repo_lint_cmd_source="main config",
+            )
+
+            path = write_run_record(Path(tmp), record)
+            data = json.loads(path.read_text())
+
+            self.assertTrue(data["repo_instructions_enabled"])
+            self.assertEqual(data["repo_instruction_files"], ["instructions.md", "safety.md"])
+            self.assertEqual(data["repo_test_cmd_source"], "commands.env")
+            self.assertEqual(data["repo_lint_cmd_source"], "main config")

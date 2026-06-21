@@ -3,6 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import shlex
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from agentic_pr.repo_instructions import RepoInstructions
 
 
 REQUIRED_FIELDS = (
@@ -73,6 +77,18 @@ class AgentConfig:
     ci_log_max_bytes: int
     ci_include_successful_checks: bool
     ci_require_failed_checks: bool
+    # Rev 10: Repo instructions
+    enable_repo_instructions: bool
+    repo_instructions_dir: str
+    repo_instructions_max_bytes: int
+    # Rev 11: Maintenance and cleanup
+    run_retention_days: int
+    log_retention_days: int
+    prompt_retention_days: int
+    comment_state_retention_days: int
+    max_log_preview_lines: int
+    service_label: str | None = None
+    repo_instructions: "RepoInstructions | None" = None
 
 
 class ConfigError(ValueError):
@@ -113,6 +129,30 @@ def load_config(path: str | Path) -> AgentConfig:
     lock_file = Path(values.get("LOCK_FILE", resolved_run_dir / "agent.lock")).expanduser()
     run_record_dir = Path(values.get("RUN_RECORD_DIR", repo_path / "var" / "runs")).expanduser()
 
+    enable_repo_instructions = _bool(values.get("ENABLE_REPO_INSTRUCTIONS", "true"), "ENABLE_REPO_INSTRUCTIONS")
+    repo_instructions_dir = values.get("REPO_INSTRUCTIONS_DIR", ".agentic-pr")
+    repo_instructions_max_bytes = _positive_int(values.get("REPO_INSTRUCTIONS_MAX_BYTES", "40000"), "REPO_INSTRUCTIONS_MAX_BYTES")
+
+    # Load repo instructions to fill missing commands if enabled
+    repo_test_cmd = ""
+    repo_lint_cmd = ""
+    if enable_repo_instructions:
+        from agentic_pr.repo_instructions import load_repo_instructions
+        repo_instructions = load_repo_instructions(repo_path, repo_instructions_max_bytes, repo_instructions_dir)
+        repo_test_cmd = repo_instructions.commands.get("TEST_CMD", "")
+        repo_lint_cmd = repo_instructions.commands.get("LINT_CMD", "")
+
+    test_cmd = values.get("TEST_CMD", "") or repo_test_cmd
+    lint_cmd = values.get("LINT_CMD", "") or repo_lint_cmd
+
+    # Rev 11: Maintenance and cleanup
+    run_retention_days = _positive_int(values.get("RUN_RETENTION_DAYS", "30"), "RUN_RETENTION_DAYS")
+    log_retention_days = _positive_int(values.get("LOG_RETENTION_DAYS", "30"), "LOG_RETENTION_DAYS")
+    prompt_retention_days = _positive_int(values.get("PROMPT_RETENTION_DAYS", "30"), "PROMPT_RETENTION_DAYS")
+    comment_state_retention_days = _positive_int(values.get("COMMENT_STATE_RETENTION_DAYS", "90"), "COMMENT_STATE_RETENTION_DAYS")
+    max_log_preview_lines = _positive_int(values.get("MAX_LOG_PREVIEW_LINES", "80"), "MAX_LOG_PREVIEW_LINES")
+    service_label = values.get("SERVICE_LABEL")
+
     return AgentConfig(
         repo_path=repo_path,
         owner_repo=values["OWNER_REPO"],
@@ -141,8 +181,8 @@ def load_config(path: str | Path) -> AgentConfig:
         max_diff_lines=_positive_int(values.get("MAX_DIFF_LINES", "800"), "MAX_DIFF_LINES"),
         require_aiderignore=_bool(values.get("REQUIRE_AIDERIGNORE", "true"), "REQUIRE_AIDERIGNORE"),
         blocked_path_patterns=tuple(_csv(values.get("BLOCKED_PATH_PATTERNS", ".env,.env.*,*.pem,*.key,*.p12,*.pfx,secrets/*,credentials/*,node_modules/*,.venv/*,dist/*,build/*,**pycache**/*"))),
-        test_cmd=values.get("TEST_CMD", ""),
-        lint_cmd=values.get("LINT_CMD", ""),
+        test_cmd=test_cmd,
+        lint_cmd=lint_cmd,
         stale_lock_seconds=_positive_int(values.get("STALE_LOCK_SECONDS", "7200"), "STALE_LOCK_SECONDS"),
         enable_planner=_bool(values.get("ENABLE_PLANNER", "true"), "ENABLE_PLANNER"),
         planner_model=values.get("PLANNER_MODEL", values["MODEL"]),
@@ -167,6 +207,18 @@ def load_config(path: str | Path) -> AgentConfig:
         ci_log_max_bytes=_positive_int(values.get("CI_LOG_MAX_BYTES", "40000"), "CI_LOG_MAX_BYTES"),
         ci_include_successful_checks=_bool(values.get("CI_INCLUDE_SUCCESSFUL_CHECKS", "false"), "CI_INCLUDE_SUCCESSFUL_CHECKS"),
         ci_require_failed_checks=_bool(values.get("CI_REQUIRE_FAILED_CHECKS", "false"), "CI_REQUIRE_FAILED_CHECKS"),
+        # Rev 10: Repo instructions
+        enable_repo_instructions=enable_repo_instructions,
+        repo_instructions_dir=repo_instructions_dir,
+        repo_instructions_max_bytes=repo_instructions_max_bytes,
+        repo_instructions=repo_instructions if enable_repo_instructions else None,
+        # Rev 11: Maintenance and cleanup
+        run_retention_days=run_retention_days,
+        log_retention_days=log_retention_days,
+        prompt_retention_days=prompt_retention_days,
+        comment_state_retention_days=comment_state_retention_days,
+        max_log_preview_lines=max_log_preview_lines,
+        service_label=service_label,
     )
 
 

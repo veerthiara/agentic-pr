@@ -109,7 +109,7 @@ def run_once(config: AgentConfig) -> RunResult:
             elif planner_result:
                 comment_issue(config, issue.number, planner_failed_comment(run_id, planner_result.error))
 
-        implementation_prompt = build_implementation_prompt(issue=issue, run_id=run_id, planner_result=planner_result)
+        implementation_prompt = build_implementation_prompt(issue=issue, run_id=run_id, planner_result=planner_result, repo_instructions=config.repo_instructions)
         if config.comment_plan:
             comment_issue(config, issue.number, implementation_started_comment(run_id))
 
@@ -178,8 +178,9 @@ def _maybe_plan(config: AgentConfig, issue, run_id: str) -> PlannerResult | None
         return None
     if config.comment_plan:
         comment_issue(config, issue.number, planner_started_comment(run_id))
-    context = build_repo_context(config.repo_path, max_files=config.repo_context_max_files, max_bytes=config.repo_context_max_bytes)
-    return run_planner(config, issue, context, run_id)
+    repo_instruction_files = config.repo_instructions.files_found if config.repo_instructions else None
+    context = build_repo_context(config.repo_path, max_files=config.repo_context_max_files, max_bytes=config.repo_context_max_bytes, repo_instruction_files=repo_instruction_files)
+    return run_planner(config, issue, context, run_id, repo_instructions=config.repo_instructions)
 
 
 def _run_validation(config: AgentConfig, command: str, name: str) -> str | None:
@@ -231,6 +232,10 @@ def _write_record(config: AgentConfig, *, issue, run_id: str, branch: str, statu
             planned_files_to_modify=planner_result.files_to_modify if planner_result else [],
             planned_files_to_create=planner_result.files_to_create if planner_result else [],
             planned_test_plan=planner_result.test_plan if planner_result else None,
+            repo_instructions_enabled=config.enable_repo_instructions,
+            repo_instruction_files=config.repo_instructions.files_found if config.repo_instructions else None,
+            repo_test_cmd_source="commands.env" if (config.enable_repo_instructions and config.repo_instructions and config.repo_instructions.commands.get("TEST_CMD")) else "main config",
+            repo_lint_cmd_source="commands.env" if (config.enable_repo_instructions and config.repo_instructions and config.repo_instructions.commands.get("LINT_CMD")) else "main config",
         ),
     )
 
@@ -322,15 +327,16 @@ def run_pr_followup_once(config: AgentConfig) -> FollowupResult:
         if config.enable_planner:
             if config.comment_plan:
                 comment_pr(config, task.pr_number, planner_started_comment(run_id))
-            context = build_repo_context(config.repo_path, max_files=config.repo_context_max_files, max_bytes=config.repo_context_max_bytes)
-            planner_result = run_planner(config, task, context, run_id)
+            repo_instruction_files = config.repo_instructions.files_found if config.repo_instructions else None
+            context = build_repo_context(config.repo_path, max_files=config.repo_context_max_files, max_bytes=config.repo_context_max_bytes, repo_instruction_files=repo_instruction_files)
+            planner_result = run_planner(config, task, context, run_id, repo_instructions=config.repo_instructions)
             if config.comment_plan and config.enable_planner:
                 if planner_result and planner_result.ok:
                     comment_pr(config, task.pr_number, planner_completed_comment(run_id, planner_result.summary))
                 elif planner_result:
                     comment_pr(config, task.pr_number, planner_failed_comment(run_id, planner_result.error))
 
-        implementation_prompt = build_followup_prompt(task=task, run_id=run_id, planner_result=planner_result, ci_context=ci_context)
+        implementation_prompt = build_followup_prompt(task=task, run_id=run_id, planner_result=planner_result, ci_context=ci_context, repo_instructions=config.repo_instructions)
 
         stage = "run_aider"
         aider_result = run_aider(config, task, run_id, prompt=implementation_prompt)
@@ -487,5 +493,9 @@ def _write_followup_record(
             ci_log_excerpt=ci_log_excerpt,
             ci_log_excerpt_file=ci_log_excerpt_file,
             ci_warnings=ci_warnings,
+            repo_instructions_enabled=config.enable_repo_instructions,
+            repo_instruction_files=config.repo_instructions.files_found if config.repo_instructions else None,
+            repo_test_cmd_source="commands.env" if (config.enable_repo_instructions and config.repo_instructions and config.repo_instructions.commands.get("TEST_CMD")) else "main config",
+            repo_lint_cmd_source="commands.env" if (config.enable_repo_instructions and config.repo_instructions and config.repo_instructions.commands.get("LINT_CMD")) else "main config",
         ),
     )

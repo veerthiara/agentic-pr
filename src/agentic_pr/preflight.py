@@ -27,6 +27,9 @@ def run_preflight(config: AgentConfig) -> PreflightResult:
         details.append("working tree clean")
         if config.require_aiderignore and not (config.repo_path / ".aiderignore").exists():
             return PreflightResult(False, "missing_aiderignore", [f"Missing required .aiderignore in {config.repo_path}"])
+        if config.enable_repo_instructions:
+            if (config.repo_path / config.repo_instructions_dir / "safety.md").is_file():
+                details.append(f"repo safety instructions found ({config.repo_instructions_dir}/safety.md)")
         run(["gh", "auth", "status"])
         details.append("gh auth ok")
         _check_ollama(config.ollama_api_base)

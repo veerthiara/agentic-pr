@@ -43,6 +43,11 @@ class RunRecord:
     ci_log_excerpt: str | None = None
     ci_log_excerpt_file: str | None = None
     ci_warnings: list[str] | None = None
+    # Rev 10: Repo instructions fields
+    repo_instructions_enabled: bool = False
+    repo_instruction_files: list[str] | None = None
+    repo_test_cmd_source: str | None = None
+    repo_lint_cmd_source: str | None = None
 
 
 def write_run_record(directory: Path, record: RunRecord) -> Path:

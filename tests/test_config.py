@@ -198,3 +198,67 @@ CI_REQUIRE_FAILED_CHECKS=false
             self.assertEqual(config.ci_log_max_bytes, 40000)
             self.assertFalse(config.ci_include_successful_checks)
             self.assertFalse(config.ci_require_failed_checks)
+
+    def test_load_config_includes_repo_instructions_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = tmp_path / "repo"
+            repo.mkdir()
+            config_file = tmp_path / "agent.env"
+            config_file.write_text(
+                f"""
+REPO_PATH={repo}
+OWNER_REPO=octo/repo
+BASE_BRANCH=main
+MODEL=ollama/qwen3-coder:30b
+LABEL_TODO=agent-run
+LABEL_RUNNING=agent-running
+LABEL_DONE=agent-pr-created
+LABEL_FAILED=agent-failed
+OLLAMA_API_BASE=http://localhost:11434
+ENABLE_REPO_INSTRUCTIONS=true
+REPO_INSTRUCTIONS_DIR=.agentic-pr
+REPO_INSTRUCTIONS_MAX_BYTES=50000
+"""
+            )
+
+            config = load_config(config_file)
+
+            self.assertTrue(config.enable_repo_instructions)
+            self.assertEqual(config.repo_instructions_dir, ".agentic-pr")
+            self.assertEqual(config.repo_instructions_max_bytes, 50000)
+
+    def test_load_config_includes_maintenance_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = tmp_path / "repo"
+            repo.mkdir()
+            config_file = tmp_path / "agent.env"
+            config_file.write_text(
+                f"""
+REPO_PATH={repo}
+OWNER_REPO=octo/repo
+BASE_BRANCH=main
+MODEL=ollama/qwen3-coder:30b
+LABEL_TODO=agent-run
+LABEL_RUNNING=agent-running
+LABEL_DONE=agent-pr-created
+LABEL_FAILED=agent-failed
+OLLAMA_API_BASE=http://localhost:11434
+RUN_RETENTION_DAYS=60
+LOG_RETENTION_DAYS=45
+PROMPT_RETENTION_DAYS=30
+COMMENT_STATE_RETENTION_DAYS=90
+MAX_LOG_PREVIEW_LINES=100
+SERVICE_LABEL=com.veer.agentic-pr.test
+"""
+            )
+
+            config = load_config(config_file)
+
+            self.assertEqual(config.run_retention_days, 60)
+            self.assertEqual(config.log_retention_days, 45)
+            self.assertEqual(config.prompt_retention_days, 30)
+            self.assertEqual(config.comment_state_retention_days, 90)
+            self.assertEqual(config.max_log_preview_lines, 100)
+            self.assertEqual(config.service_label, "com.veer.agentic-pr.test")

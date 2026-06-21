@@ -5,6 +5,7 @@ from agentic_pr.planner import PlannerResult
 from agentic_pr.pr_followup import FollowupTask
 from agentic_pr.prompt_builder import build_implementation_prompt, build_followup_prompt
 from agentic_pr.ci_context import CIContext
+from agentic_pr.repo_instructions import RepoInstructions
 
 
 class PromptBuilderTests(unittest.TestCase):
@@ -18,6 +19,23 @@ class PromptBuilderTests(unittest.TestCase):
         self.assertIn("Build routes", prompt)
         self.assertIn("Creating new files is allowed", prompt)
         self.assertIn("Run ID: run-1", prompt)
+
+    def test_prompt_includes_repo_instructions(self) -> None:
+        issue = Issue(number=1, title="Build app", body="Make a FastAPI app", created_at="now")
+        plan = PlannerResult(True, "completed", "Summary\nBuild routes", None, "Build routes", ["main.py"], ["tests/test_app.py"], "pytest", None)
+        instructions = RepoInstructions(
+            instructions_text="Test instructions",
+            safety_text="Test safety",
+            examples_text="Test examples",
+            commands={"TEST_CMD": "pytest"}
+        )
+
+        prompt = build_implementation_prompt(issue=issue, run_id="run-1", planner_result=plan, repo_instructions=instructions)
+
+        self.assertIn("Project Instructions:\nTest instructions", prompt)
+        self.assertIn("Safety Rules:\nTest safety", prompt)
+        self.assertIn("Examples:\nTest examples", prompt)
+        self.assertIn("TEST_CMD: pytest", prompt)
 
     def test_followup_prompt_includes_pr_info_and_no_new_pr_instruction(self) -> None:
         task = FollowupTask(

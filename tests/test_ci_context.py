@@ -63,6 +63,9 @@ class CIContextTests(unittest.TestCase):
             ci_log_max_bytes=40000,
             ci_include_successful_checks=False,
             ci_require_failed_checks=False,
+            enable_repo_instructions=True,
+            repo_instructions_dir=".agentic-pr",
+            repo_instructions_max_bytes=40000,
         )
 
     @patch("agentic_pr.ci_context.get_pr_checks")

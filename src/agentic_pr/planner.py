@@ -10,6 +10,7 @@ from agentic_pr.config import AgentConfig
 from agentic_pr.github_ops import Issue
 from agentic_pr.pr_followup import FollowupTask
 from agentic_pr.repo_context import RepoContext
+from agentic_pr.repo_instructions import RepoInstructions
 
 
 @dataclass(frozen=True)
@@ -28,10 +29,10 @@ class PlannerResult:
 PlannerInput = Union[Issue, FollowupTask]
 
 
-def run_planner(config: AgentConfig, input_obj: PlannerInput, context: RepoContext, run_id: str) -> PlannerResult:
+def run_planner(config: AgentConfig, input_obj: PlannerInput, context: RepoContext, run_id: str, repo_instructions: RepoInstructions | None = None) -> PlannerResult:
     config.run_dir.mkdir(parents=True, exist_ok=True)
     output_file = config.run_dir / f"{run_id}-planner.md"
-    prompt = _planner_prompt(input_obj, context)
+    prompt = _planner_prompt(input_obj, context, repo_instructions)
     planner_model = ollama_cli_model(config.planner_model)
     result = run(["ollama", "run", planner_model], input_text=prompt, check=False, timeout=config.planner_timeout_seconds)
     if result.timed_out:
@@ -70,7 +71,7 @@ def save_planner_fallback(config: AgentConfig, run_id: str, message: str) -> Pat
     return path
 
 
-def _planner_prompt(input_obj: PlannerInput, context: RepoContext) -> str:
+def _planner_prompt(input_obj: PlannerInput, context: RepoContext, repo_instructions: RepoInstructions | None = None) -> str:
     if isinstance(input_obj, Issue):
         title = input_obj.title
         body = input_obj.body
@@ -79,6 +80,18 @@ def _planner_prompt(input_obj: PlannerInput, context: RepoContext) -> str:
         title = input_obj.pr_title
         body = f"Follow-up command: {input_obj.command_text}\n\nOriginal PR: #{input_obj.pr_number} ({input_obj.pr_title})"
         header = "PR follow-up command"
+
+    instructions_section = ""
+    if repo_instructions:
+        parts = []
+        if repo_instructions.instructions_text:
+            parts.append("Project Instructions:\n" + repo_instructions.instructions_text)
+        if repo_instructions.safety_text:
+            parts.append("Safety Rules:\n" + repo_instructions.safety_text)
+        if repo_instructions.examples_text:
+            parts.append("Examples:\n" + repo_instructions.examples_text)
+        if parts:
+            instructions_section = "\nRepo-Specific Instructions & Guidelines:\n" + "\n\n".join(parts) + "\n"
 
     return f"""You are planning a code change before Aider implements it.
 
@@ -98,7 +111,7 @@ Final implementation prompt for Aider
 {header}: {title}
 {header} body:
 {body}
-
+{instructions_section}
 Repository context:
 {context.as_text()}
 """

@@ -18,6 +18,7 @@ class RepoContext:
     important_files: list[str]
     project_type_hints: list[str]
     excerpts: dict[str, str]
+    repo_instruction_files: list[str]
 
     def as_text(self) -> str:
         parts = [
@@ -27,17 +28,23 @@ class RepoContext:
             *[f"- {item}" for item in self.top_level_tree],
             "Project type hints:",
             *[f"- {hint}" for hint in self.project_type_hints],
+        ]
+        if self.repo_instruction_files:
+            parts.append(f"Repo instructions found: {', '.join(self.repo_instruction_files)}")
+            parts.append("(See prompt implementation section for details)")
+        
+        parts.extend([
             "Important files:",
             *[f"- {path}" for path in self.important_files],
             "File excerpts:",
-        ]
+        ])
         for path, excerpt in self.excerpts.items():
             parts.append(f"--- {path} ---")
             parts.append(excerpt)
         return "\n".join(parts)
 
 
-def build_repo_context(repo_path: Path, *, max_files: int, max_bytes: int) -> RepoContext:
+def build_repo_context(repo_path: Path, *, max_files: int, max_bytes: int, repo_instruction_files: list[str] | None = None) -> RepoContext:
     repo_path = repo_path.resolve()
     branch = _current_branch(repo_path)
     top_level_tree = sorted(path.name + ("/" if path.is_dir() else "") for path in repo_path.iterdir() if not _ignored_path(path.relative_to(repo_path)))
@@ -56,7 +63,7 @@ def build_repo_context(repo_path: Path, *, max_files: int, max_bytes: int) -> Re
         excerpt = text[: min(len(text), remaining, 4000)]
         excerpts[rel] = excerpt
         used += len(excerpt.encode())
-    return RepoContext(repo_path, branch, top_level_tree, candidates, _project_hints(repo_path), excerpts)
+    return RepoContext(repo_path, branch, top_level_tree, candidates, _project_hints(repo_path), excerpts, repo_instruction_files or [])
 
 
 def _candidate_files(repo_path: Path, *, max_files: int) -> list[str]:

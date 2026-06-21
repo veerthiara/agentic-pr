@@ -4,12 +4,34 @@ from agentic_pr.github_ops import Issue
 from agentic_pr.planner import PlannerResult
 from agentic_pr.pr_followup import FollowupTask
 from agentic_pr.ci_context import CIContext
+from agentic_pr.repo_instructions import RepoInstructions
 
 
-def build_implementation_prompt(*, issue: Issue, run_id: str, planner_result: PlannerResult | None) -> str:
+def build_implementation_prompt(*, issue: Issue, run_id: str, planner_result: PlannerResult | None, repo_instructions: RepoInstructions | None = None) -> str:
     plan_text = "No planner output is available. Use the issue directly."
     if planner_result and planner_result.ok and planner_result.output:
         plan_text = planner_result.output
+    instructions_section = ""
+    if repo_instructions:
+        parts = []
+        if repo_instructions.instructions_text:
+            parts.append("Project Instructions:\n" + repo_instructions.instructions_text)
+        if repo_instructions.safety_text:
+            parts.append("Safety Rules:\n" + repo_instructions.safety_text)
+        if repo_instructions.examples_text:
+            parts.append("Examples:\n" + repo_instructions.examples_text)
+        
+        cmds = []
+        if repo_instructions.commands.get("TEST_CMD"):
+            cmds.append(f"TEST_CMD: {repo_instructions.commands['TEST_CMD']}")
+        if repo_instructions.commands.get("LINT_CMD"):
+            cmds.append(f"LINT_CMD: {repo_instructions.commands['LINT_CMD']}")
+        if cmds:
+            parts.append("Repo-Specific Commands:\n" + "\n".join(cmds))
+            
+        if parts:
+            instructions_section = "\nRepo-Specific Instructions & Guidelines:\n" + "\n\n".join(parts) + "\n"
+
     return f"""You are a local coding agent working in this git repository.
 
 Run ID: {run_id}
@@ -21,7 +43,7 @@ Original issue body:
 
 Planner output / implementation plan:
 {plan_text}
-
+{instructions_section}
 Implementation instructions:
 - Implement the issue completely, using the planner output when helpful.
 - Creating new files is allowed when needed.
@@ -41,6 +63,7 @@ def build_followup_prompt(
     run_id: str,
     planner_result: PlannerResult | None,
     ci_context: CIContext | None = None,
+    repo_instructions: RepoInstructions | None = None,
 ) -> str:
     plan_text = "No planner output is available. Use the command directly."
     if planner_result and planner_result.ok and planner_result.output:
@@ -67,6 +90,27 @@ CI Context:
 No GitHub checks found for this PR. Continuing without CI context.
 """
     
+    instructions_section = ""
+    if repo_instructions:
+        parts = []
+        if repo_instructions.instructions_text:
+            parts.append("Project Instructions:\n" + repo_instructions.instructions_text)
+        if repo_instructions.safety_text:
+            parts.append("Safety Rules:\n" + repo_instructions.safety_text)
+        if repo_instructions.examples_text:
+            parts.append("Examples:\n" + repo_instructions.examples_text)
+        
+        cmds = []
+        if repo_instructions.commands.get("TEST_CMD"):
+            cmds.append(f"TEST_CMD: {repo_instructions.commands['TEST_CMD']}")
+        if repo_instructions.commands.get("LINT_CMD"):
+            cmds.append(f"LINT_CMD: {repo_instructions.commands['LINT_CMD']}")
+        if cmds:
+            parts.append("Repo-Specific Commands:\n" + "\n".join(cmds))
+            
+        if parts:
+            instructions_section = "\nRepo-Specific Instructions & Guidelines:\n" + "\n\n".join(parts) + "\n"
+
     return f"""You are a local coding agent working on a follow-up for an existing pull request.
 
 Run ID: {run_id}
@@ -81,7 +125,7 @@ Follow-up command from @{task.comment_author}:
 
 Planner output / implementation plan:
 {plan_text}
-
+{instructions_section}
 Implementation instructions:
 - This is a follow-up on an existing PR. Do NOT create a new branch or PR.
 - Preserve the existing PR intent and changes.
