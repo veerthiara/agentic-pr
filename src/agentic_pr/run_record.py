@@ -27,6 +27,13 @@ class RunRecord:
     planned_files_to_modify: list[str] | None = None
     planned_files_to_create: list[str] | None = None
     planned_test_plan: str | None = None
+    # Rev 08: PR follow-up fields
+    run_type: str = "issue"  # "issue" or "pr_followup"
+    pr_number: int | None = None
+    pr_title: str | None = None
+    comment_id: str | None = None
+    command_text: str | None = None
+    commit_sha: str | None = None
 
 
 def write_run_record(directory: Path, record: RunRecord) -> Path:

@@ -82,3 +82,26 @@ def commit_all(repo_path: Path, message: str) -> None:
 
 def push_branch(repo_path: Path, branch_name_value: str) -> None:
     run(["git", "push", "-u", "origin", branch_name_value], cwd=repo_path)
+
+
+# Rev 08: PR follow-up helpers
+def fetch_branch(repo_path: Path, branch_name: str) -> None:
+    run(["git", "fetch", "origin", branch_name], cwd=repo_path)
+
+
+def checkout_existing_branch(repo_path: Path, branch_name: str, base_branch: str) -> None:
+    ensure_clean_worktree(repo_path)
+    run(["git", "fetch", "origin", branch_name], cwd=repo_path)
+    run(["git", "checkout", branch_name], cwd=repo_path)
+    run(["git", "reset", "--hard", f"origin/{branch_name}"], cwd=repo_path)
+    ensure_clean_worktree(repo_path)
+
+
+def current_commit(repo_path: Path) -> str:
+    result = run(["git", "rev-parse", "HEAD"], cwd=repo_path)
+    return result.stdout.strip()
+
+
+def latest_commit_subject(repo_path: Path) -> str:
+    result = run(["git", "log", "-1", "--pretty=%s"], cwd=repo_path)
+    return result.stdout.strip()

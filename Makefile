@@ -2,7 +2,7 @@ CONFIG ?= config/agent-test.env
 PYTHON ?= python3
 PYTHONPATH := src
 
-.PHONY: doctor ensure-labels run-once poll list-runs show-last-run install-service start-service stop-service restart-service status-service uninstall-service tail-service-logs test
+.PHONY: doctor ensure-labels run-once run-followup-once poll list-runs show-last-run install-service start-service stop-service restart-service status-service uninstall-service tail-service-logs test
 
 doctor:
 	PYTHONPATH=$(PYTHONPATH) $(PYTHON) -m agentic_pr.cli doctor --config $(CONFIG)
@@ -12,6 +12,9 @@ ensure-labels:
 
 run-once:
 	PYTHONPATH=$(PYTHONPATH) $(PYTHON) -m agentic_pr.cli run-once --config $(CONFIG)
+
+run-followup-once:
+	PYTHONPATH=$(PYTHONPATH) $(PYTHON) -m agentic_pr.cli run-followup-once --config $(CONFIG)
 
 poll:
 	PYTHONPATH=$(PYTHONPATH) $(PYTHON) -m agentic_pr.cli poll --config $(CONFIG)

@@ -6,10 +6,11 @@ from pathlib import Path
 from time import sleep
 
 from agentic_pr.config import AgentConfig
-from agentic_pr.orchestrator import RunResult, run_once
+from agentic_pr.orchestrator import FollowupResult, RunResult, run_once, run_pr_followup_once
 
 
 RunOnce = Callable[[AgentConfig], RunResult]
+FollowupOnce = Callable[[AgentConfig], FollowupResult]
 SleepFn = Callable[[int], None]
 
 
@@ -24,19 +25,37 @@ def poll_forever(config: AgentConfig) -> None:
         print("Polling stopped.")
 
 
-def poll_once(config: AgentConfig, *, run_once_fn: RunOnce = run_once, sleep_fn: SleepFn | None = None) -> RunResult | None:
+def poll_once(config: AgentConfig, *, run_once_fn: RunOnce = run_once, run_followup_fn: FollowupOnce = run_pr_followup_once, sleep_fn: SleepFn | None = None) -> RunResult | FollowupResult | None:
+    # Process issue task first
     try:
         result = run_once_fn(config)
         _log(config, f"{result.status}: {result.message}")
         print(result.message)
-        return result
     except Exception as exc:
-        message = f"Polling cycle failed unexpectedly: {exc}"
+        message = f"Polling cycle (issue) failed unexpectedly: {exc}"
         _log(config, message)
         print(message)
         if sleep_fn:
             sleep_fn(config.poll_interval_seconds)
         return RunResult("failed", message)
+
+    # Process PR follow-up task if enabled
+    if config.enable_pr_followups:
+        try:
+            followup_result = run_followup_fn(config)
+            if followup_result.status != "no_followup":
+                _log(config, f"followup:{followup_result.status}: {followup_result.message}")
+                print(followup_result.message)
+                return followup_result
+        except Exception as exc:
+            message = f"Polling cycle (follow-up) failed unexpectedly: {exc}"
+            _log(config, message)
+            print(message)
+            if sleep_fn:
+                sleep_fn(config.poll_interval_seconds)
+            return FollowupResult("failed", message)
+
+    return result
 
 
 def print_startup(config: AgentConfig) -> None:

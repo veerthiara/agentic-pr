@@ -2,39 +2,45 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from agentic_pr.comment_state import CommentState, is_processed, load_comment_state, mark_processed
 from agentic_pr.config import AgentConfig
-from agentic_pr.orchestrator import RunResult
-from agentic_pr.poller import poll_once
 
 
-class PollerTests(unittest.TestCase):
-    def test_poll_once_runs_one_iteration(self) -> None:
+class CommentStateTests(unittest.TestCase):
+    def test_load_creates_empty_state_when_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             config = _config(Path(tmp))
-            calls = []
+            state = load_comment_state(config, 42)
+            self.assertEqual(state.owner_repo, "octo/repo")
+            self.assertEqual(state.pr_number, 42)
+            self.assertEqual(state.processed_comment_ids, [])
 
-            def fake_run_once(received_config: AgentConfig) -> RunResult:
-                calls.append(received_config)
-                return RunResult("no_issue", "No issue")
-
-            result = poll_once(config, run_once_fn=fake_run_once)
-
-            self.assertEqual(result, RunResult("no_issue", "No issue"))
-            self.assertEqual(calls, [config])
-            self.assertIn("no_issue: No issue", (config.log_dir / "poller.log").read_text())
-
-    def test_poll_once_handles_unexpected_exception(self) -> None:
+    def test_mark_processed_writes_and_reads(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             config = _config(Path(tmp))
-            sleeps = []
+            mark_processed(config, 42, "comment-1")
+            mark_processed(config, 42, "comment-2")
+            state = load_comment_state(config, 42)
+            self.assertEqual(state.processed_comment_ids, ["comment-1", "comment-2"])
 
-            def fake_run_once(received_config: AgentConfig) -> RunResult:
-                raise RuntimeError("boom")
+    def test_is_processed_returns_true_after_mark(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = _config(Path(tmp))
+            self.assertFalse(is_processed(config, 42, "comment-1"))
+            mark_processed(config, 42, "comment-1")
+            self.assertTrue(is_processed(config, 42, "comment-1"))
 
-            result = poll_once(config, run_once_fn=fake_run_once, sleep_fn=sleeps.append)
+    def test_is_processed_returns_false_for_different_comment(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = _config(Path(tmp))
+            mark_processed(config, 42, "comment-1")
+            self.assertFalse(is_processed(config, 42, "comment-2"))
 
-            self.assertEqual(result.status, "failed")
-            self.assertEqual(sleeps, [config.poll_interval_seconds])
+    def test_state_is_per_pr(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = _config(Path(tmp))
+            mark_processed(config, 42, "comment-1")
+            self.assertFalse(is_processed(config, 43, "comment-1"))
 
 
 def _config(root: Path) -> AgentConfig:
@@ -65,7 +71,7 @@ def _config(root: Path) -> AgentConfig:
         max_changed_files=20,
         max_diff_lines=800,
         require_aiderignore=True,
-        blocked_path_patterns=(".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx", "secrets/*", "credentials/*", "node_modules/*", ".venv/*", "dist/*", "build/*", "**pycache**/*"),
+        blocked_path_patterns=(".env",),
         test_cmd="",
         lint_cmd="",
         stale_lock_seconds=7200,

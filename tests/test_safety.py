@@ -42,4 +42,13 @@ def _config(max_changed_files: int = 20, max_diff_lines: int = 800) -> AgentConf
         repo_context_max_bytes=120000,
         planner_timeout_seconds=900,
         comment_plan=True,
+        enable_pr_followups=True,
+        pr_followup_command_prefix="/agent",
+        pr_followup_require_label=False,
+        label_followup="agent-followup",
+        label_followup_running="agent-followup-running",
+        label_followup_done="agent-followup-done",
+        label_followup_failed="agent-followup-failed",
+        comment_state_dir=root / "comment-state",
+        max_followup_comments_per_cycle=1,
     )

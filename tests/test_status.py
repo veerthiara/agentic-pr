@@ -20,6 +20,12 @@ from agentic_pr.status import (
     planner_completed_comment,
     planner_failed_comment,
     implementation_started_comment,
+    followup_accepted_comment,
+    followup_started_comment,
+    followup_no_changes_comment,
+    followup_blocked_comment,
+    followup_failed_comment,
+    followup_pushed_comment,
 )
 
 
@@ -31,7 +37,7 @@ class StatusTests(unittest.TestCase):
     def test_status_label_list(self) -> None:
         self.assertEqual(
             status_labels(_config()),
-            ["agent-run", "agent-running", "agent-pr-created", "agent-failed", "agent-no-changes", "agent-blocked"],
+            ["agent-run", "agent-running", "agent-pr-created", "agent-failed", "agent-no-changes", "agent-blocked", "agent-followup", "agent-followup-running", "agent-followup-done", "agent-followup-failed"],
         )
 
     def test_issue_comment_text_generation(self) -> None:
@@ -49,6 +55,14 @@ class StatusTests(unittest.TestCase):
         self.assertIn("summary", planner_completed_comment("run-1", "summary"))
         self.assertIn("continue", planner_failed_comment("run-1", "timeout"))
         self.assertIn("run-1", implementation_started_comment("run-1"))
+        self.assertIn("run-1", followup_accepted_comment("run-1", "fix tests", "user1"))
+        self.assertIn("fix tests", followup_accepted_comment("run-1", "fix tests", "user1"))
+        self.assertIn("user1", followup_accepted_comment("run-1", "fix tests", "user1"))
+        self.assertIn("run-1", followup_started_comment("run-1", "fix tests"))
+        self.assertIn("run-1", followup_no_changes_comment("run-1", "fix tests"))
+        self.assertIn("run-1", followup_blocked_comment("run-1", "fix tests", "blocked_path", ["Blocked path: .env"]))
+        self.assertIn("run-1", followup_failed_comment("run-1", "fix tests", "run_aider", "boom"))
+        self.assertIn("run-1", followup_pushed_comment("run-1", "fix tests", "abc123def", "https://github.com/octo/repo/pull/5"))
 
     def test_pr_body_generation(self) -> None:
         config = _config()
@@ -101,7 +115,7 @@ def _config() -> AgentConfig:
         max_changed_files=20,
         max_diff_lines=800,
         require_aiderignore=True,
-        blocked_path_patterns=(".env", "secrets/*"),
+        blocked_path_patterns=(".env",),
         test_cmd="",
         lint_cmd="",
         stale_lock_seconds=7200,
@@ -111,4 +125,13 @@ def _config() -> AgentConfig:
         repo_context_max_bytes=120000,
         planner_timeout_seconds=900,
         comment_plan=True,
+        enable_pr_followups=True,
+        pr_followup_command_prefix="/agent",
+        pr_followup_require_label=False,
+        label_followup="agent-followup",
+        label_followup_running="agent-followup-running",
+        label_followup_done="agent-followup-done",
+        label_followup_failed="agent-followup-failed",
+        comment_state_dir=root / "comment-state",
+        max_followup_comments_per_cycle=1,
     )

@@ -8,12 +8,13 @@ from typing import Literal
 from agentic_pr.aider_runner import run_aider
 from agentic_pr.command import run
 from agentic_pr.config import AgentConfig
-from agentic_pr.git_ops import branch_name, checkout_base_and_reset, commit_all, create_branch, has_changes, push_branch
-from agentic_pr.github_ops import comment_issue, create_pr, get_oldest_todo_issue, mark_blocked, mark_done, mark_failed, mark_no_changes, set_running
+from agentic_pr.git_ops import branch_name, checkout_base_and_reset, checkout_existing_branch, commit_all, create_branch, current_commit, has_changes, push_branch
+from agentic_pr.github_ops import add_label_to_pr_or_issue, comment_issue, comment_pr, create_pr, get_oldest_todo_issue, mark_blocked, mark_done, mark_failed, mark_no_changes, remove_label_from_pr_or_issue, set_running
 from agentic_pr.lock import FileLock, LockAlreadyHeld
 from agentic_pr.planner import PlannerResult, run_planner
 from agentic_pr.preflight import run_preflight
-from agentic_pr.prompt_builder import build_implementation_prompt
+from agentic_pr.prompt_builder import build_followup_prompt, build_implementation_prompt
+from agentic_pr.pr_followup import FollowupTask, accept_followup_comment, find_pending_followup, mark_comment_processed
 from agentic_pr.repo_context import build_repo_context
 from agentic_pr.run_record import RunRecord, write_run_record
 from agentic_pr.safety import check_safety
@@ -21,6 +22,12 @@ from agentic_pr.status import (
     aider_timeout_comment,
     blocked_comment,
     failed_comment,
+    followup_accepted_comment,
+    followup_blocked_comment,
+    followup_failed_comment,
+    followup_no_changes_comment,
+    followup_pushed_comment,
+    followup_started_comment,
     generate_run_id,
     implementation_started_comment,
     no_changes_comment,
@@ -223,3 +230,195 @@ def _write_record(config: AgentConfig, *, issue, run_id: str, branch: str, statu
 
 def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+# Rev 08: PR follow-up orchestrator
+FollowupStatus = Literal["no_followup", "no_changes", "pr_updated", "failed", "blocked"]
+
+
+@dataclass(frozen=True)
+class FollowupResult:
+    status: FollowupStatus
+    message: str
+    pr_number: int | None = None
+    run_id: str | None = None
+    commit_sha: str | None = None
+
+
+def run_pr_followup_once(config: AgentConfig) -> FollowupResult:
+    if not config.enable_pr_followups:
+        return FollowupResult("no_followup", "PR follow-ups disabled")
+
+    lock = FileLock(config.lock_file, stale_seconds=config.stale_lock_seconds)
+    try:
+        lock.acquire()
+    except LockAlreadyHeld as exc:
+        return FollowupResult("blocked", str(exc))
+
+    task = None
+    run_id = None
+    started_at = _now_iso()
+    log_file = None
+    planner_result: PlannerResult | None = None
+
+    try:
+        task = find_pending_followup(config)
+        if task is None:
+            return FollowupResult("no_followup", "No pending follow-up commands")
+
+        run_id = f"run-{started_at.replace(':', '').replace('-', '')}-pr-{task.pr_number}-{task.comment_id[:8]}"
+        run_id = run_id.replace("T", "-")
+
+        accept_followup_comment(config, task, run_id)
+
+        if config.comment_on_start:
+            comment_pr(config, task.pr_number, followup_started_comment(run_id, task.command_text))
+
+        add_label_to_pr_or_issue(config, task.pr_number, config.label_followup_running)
+
+        stage = "checkout_pr_branch"
+        checkout_existing_branch(config.repo_path, task.head_branch, task.base_branch)
+
+        stage = "planner"
+        if config.enable_planner:
+            if config.comment_plan:
+                comment_pr(config, task.pr_number, planner_started_comment(run_id))
+            context = build_repo_context(config.repo_path, max_files=config.repo_context_max_files, max_bytes=config.repo_context_max_bytes)
+            planner_result = run_planner(config, task, context, run_id)
+            if config.comment_plan and config.enable_planner:
+                if planner_result and planner_result.ok:
+                    comment_pr(config, task.pr_number, planner_completed_comment(run_id, planner_result.summary))
+                elif planner_result:
+                    comment_pr(config, task.pr_number, planner_failed_comment(run_id, planner_result.error))
+
+        implementation_prompt = build_followup_prompt(task=task, run_id=run_id, planner_result=planner_result)
+
+        stage = "run_aider"
+        aider_result = run_aider(config, task, run_id, prompt=implementation_prompt)
+        log_file = str(aider_result.log_file)
+        if aider_result.timed_out:
+            remove_label_from_pr_or_issue(config, task.pr_number, config.label_followup_running)
+            add_label_to_pr_or_issue(config, task.pr_number, config.label_followup_failed)
+            if config.comment_on_failure:
+                comment_pr(config, task.pr_number, followup_failed_comment(run_id, task.command_text, "run_aider", f"Aider timed out after {config.aider_timeout_seconds} seconds"))
+            _write_followup_record(config, task=task, run_id=run_id, branch=task.head_branch, status="failed", started_at=started_at, finished_at=_now_iso(), log_file=log_file, error_summary=f"Aider timed out after {config.aider_timeout_seconds} seconds", planner_result=planner_result, commit_sha=None)
+            mark_comment_processed(config, task)
+            return FollowupResult("failed", f"Aider timed out after {config.aider_timeout_seconds} seconds", pr_number=task.pr_number, run_id=run_id)
+
+        stage = "check_changes"
+        if not has_changes(config.repo_path):
+            remove_label_from_pr_or_issue(config, task.pr_number, config.label_followup_running)
+            if config.comment_on_no_changes:
+                comment_pr(config, task.pr_number, followup_no_changes_comment(run_id, task.command_text))
+            _write_followup_record(config, task=task, run_id=run_id, branch=task.head_branch, status="no_changes", started_at=started_at, finished_at=_now_iso(), log_file=log_file, error_summary=None, planner_result=planner_result, commit_sha=None)
+            mark_comment_processed(config, task)
+            return FollowupResult("no_changes", "Aider produced no changes.", pr_number=task.pr_number, run_id=run_id)
+
+        stage = "safety"
+        safety = check_safety(config)
+        if not safety.ok:
+            remove_label_from_pr_or_issue(config, task.pr_number, config.label_followup_running)
+            add_label_to_pr_or_issue(config, task.pr_number, config.label_followup_failed)
+            comment_pr(config, task.pr_number, followup_blocked_comment(run_id, task.command_text, safety.reason or "safety_failed", safety.details))
+            _write_followup_record(config, task=task, run_id=run_id, branch=task.head_branch, status="blocked", started_at=started_at, finished_at=_now_iso(), log_file=log_file, error_summary=f"{safety.reason}: {'; '.join(safety.details[:3])}", planner_result=planner_result, commit_sha=None)
+            mark_comment_processed(config, task)
+            return FollowupResult("blocked", f"{safety.reason}: {'; '.join(safety.details[:3])}", pr_number=task.pr_number, run_id=run_id)
+
+        stage = "lint"
+        validation = _run_validation(config, config.lint_cmd, "lint")
+        if validation is not None:
+            remove_label_from_pr_or_issue(config, task.pr_number, config.label_followup_running)
+            add_label_to_pr_or_issue(config, task.pr_number, config.label_followup_failed)
+            if config.comment_on_failure:
+                comment_pr(config, task.pr_number, followup_failed_comment(run_id, task.command_text, "lint", validation))
+            _write_followup_record(config, task=task, run_id=run_id, branch=task.head_branch, status="failed", started_at=started_at, finished_at=_now_iso(), log_file=log_file, error_summary=validation, planner_result=planner_result, commit_sha=None)
+            mark_comment_processed(config, task)
+            return FollowupResult("failed", validation, pr_number=task.pr_number, run_id=run_id)
+
+        stage = "test"
+        validation = _run_validation(config, config.test_cmd, "test")
+        if validation is not None:
+            remove_label_from_pr_or_issue(config, task.pr_number, config.label_followup_running)
+            add_label_to_pr_or_issue(config, task.pr_number, config.label_followup_failed)
+            if config.comment_on_failure:
+                comment_pr(config, task.pr_number, followup_failed_comment(run_id, task.command_text, "test", validation))
+            _write_followup_record(config, task=task, run_id=run_id, branch=task.head_branch, status="failed", started_at=started_at, finished_at=_now_iso(), log_file=log_file, error_summary=validation, planner_result=planner_result, commit_sha=None)
+            mark_comment_processed(config, task)
+            return FollowupResult("failed", validation, pr_number=task.pr_number, run_id=run_id)
+
+        stage = "commit"
+        commit_message = f"agent: follow up on PR #{task.pr_number}"
+        commit_all(config.repo_path, commit_message)
+        commit_sha = current_commit(config.repo_path)
+
+        stage = "push"
+        push_branch(config.repo_path, task.head_branch)
+
+        remove_label_from_pr_or_issue(config, task.pr_number, config.label_followup_running)
+        add_label_to_pr_or_issue(config, task.pr_number, config.label_followup_done)
+        if config.comment_on_success:
+            comment_pr(config, task.pr_number, followup_pushed_comment(run_id, task.command_text, commit_sha, task.pr_url))
+        _write_followup_record(config, task=task, run_id=run_id, branch=task.head_branch, status="pr_updated", started_at=started_at, finished_at=_now_iso(), log_file=log_file, error_summary=None, planner_result=planner_result, commit_sha=commit_sha)
+        mark_comment_processed(config, task)
+        return FollowupResult("pr_updated", f"Pushed follow-up commit {commit_sha[:8]} to PR #{task.pr_number}", pr_number=task.pr_number, run_id=run_id, commit_sha=commit_sha)
+
+    except Exception as exc:
+        error_summary = short_error(exc)
+        if task is not None and run_id is not None:
+            remove_label_from_pr_or_issue(config, task.pr_number, config.label_followup_running)
+            add_label_to_pr_or_issue(config, task.pr_number, config.label_followup_failed)
+            if config.comment_on_failure:
+                comment_pr(config, task.pr_number, followup_failed_comment(run_id, task.command_text, stage, error_summary))
+            _write_followup_record(config, task=task, run_id=run_id, branch=task.head_branch, status="failed", started_at=started_at, finished_at=_now_iso(), log_file=log_file, error_summary=error_summary, planner_result=planner_result, commit_sha=None)
+            mark_comment_processed(config, task)
+            return FollowupResult("failed", error_summary, pr_number=task.pr_number, run_id=run_id)
+        return FollowupResult("failed", error_summary)
+    finally:
+        lock.release()
+
+
+def _write_followup_record(
+    config: AgentConfig,
+    *,
+    task: FollowupTask,
+    run_id: str,
+    branch: str,
+    status: str,
+    started_at: str,
+    finished_at: str | None,
+    log_file: str | None,
+    error_summary: str | None,
+    planner_result: PlannerResult | None,
+    commit_sha: str | None,
+) -> None:
+    write_run_record(
+        config.run_record_dir,
+        RunRecord(
+            run_id=run_id,
+            issue_number=0,
+            issue_title="",
+            owner_repo=config.owner_repo,
+            model=config.model,
+            base_branch=task.base_branch,
+            agent_branch=branch,
+            status=status,
+            pr_url=task.pr_url,
+            started_at=started_at,
+            finished_at=finished_at,
+            log_file=log_file,
+            error_summary=error_summary,
+            planner_enabled=config.enable_planner,
+            planner_status=planner_result.status if planner_result else ("disabled" if not config.enable_planner else None),
+            planner_output_file=str(planner_result.output_file) if planner_result and planner_result.output_file else None,
+            plan_summary=planner_result.summary if planner_result else None,
+            planned_files_to_modify=planner_result.files_to_modify if planner_result else [],
+            planned_files_to_create=planner_result.files_to_create if planner_result else [],
+            planned_test_plan=planner_result.test_plan if planner_result else None,
+            run_type="pr_followup",
+            pr_number=task.pr_number,
+            pr_title=task.pr_title,
+            comment_id=task.comment_id,
+            command_text=task.command_text,
+            commit_sha=commit_sha,
+        ),
+    )

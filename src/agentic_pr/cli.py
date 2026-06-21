@@ -7,7 +7,7 @@ import sys
 from agentic_pr.config import ConfigError, load_config
 from agentic_pr.doctor import run_doctor
 from agentic_pr.github_ops import ensure_labels
-from agentic_pr.orchestrator import run_once
+from agentic_pr.orchestrator import run_once, run_pr_followup_once
 from agentic_pr.poller import poll_forever
 from agentic_pr.run_record import latest_run_record, list_run_records, load_run_record
 
@@ -16,7 +16,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="agentic-pr")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    for name in ("doctor", "ensure-labels", "run-once", "poll", "list-runs", "show-last-run"):
+    for name in ("doctor", "ensure-labels", "run-once", "run-followup-once", "poll", "list-runs", "show-last-run"):
         command_parser = subparsers.add_parser(name)
         command_parser.add_argument("--config", required=True)
 
@@ -32,6 +32,10 @@ def main(argv: list[str] | None = None) -> int:
             print("ok: labels ensured")
         elif args.command == "run-once":
             result = run_once(config)
+            print(result.message)
+            return 1 if result.status == "failed" else 0
+        elif args.command == "run-followup-once":
+            result = run_pr_followup_once(config)
             print(result.message)
             return 1 if result.status == "failed" else 0
         elif args.command == "poll":

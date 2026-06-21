@@ -11,7 +11,7 @@ def generate_run_id(issue_number: int, now: datetime | None = None) -> str:
 
 
 def status_labels(config: AgentConfig) -> list[str]:
-    return [
+    labels = [
         config.label_todo,
         config.label_running,
         config.label_done,
@@ -19,6 +19,14 @@ def status_labels(config: AgentConfig) -> list[str]:
         config.label_no_changes,
         config.label_blocked,
     ]
+    if config.enable_pr_followups:
+        labels.extend([
+            config.label_followup,
+            config.label_followup_running,
+            config.label_followup_done,
+            config.label_followup_failed,
+        ])
+    return labels
 
 
 def start_comment(config: AgentConfig, run_id: str) -> str:
@@ -165,3 +173,61 @@ def planner_failed_comment(run_id: str, error: str | None) -> str:
 
 def implementation_started_comment(run_id: str) -> str:
     return f"Starting implementation with the final Aider prompt.\n\nRun ID: `{run_id}`"
+
+
+# Rev 08: PR follow-up comment templates
+def followup_accepted_comment(run_id: str, command_text: str, author: str) -> str:
+    return (
+        "Follow-up command accepted.\n\n"
+        f"Run ID: `{run_id}`\n"
+        f"Command: `{command_text}`\n"
+        f"Author: @{author}"
+    )
+
+
+def followup_started_comment(run_id: str, command_text: str) -> str:
+    return (
+        "Follow-up implementation started.\n\n"
+        f"Run ID: `{run_id}`\n"
+        f"Command: `{command_text}`"
+    )
+
+
+def followup_no_changes_comment(run_id: str, command_text: str) -> str:
+    return (
+        "Follow-up ran but produced no file changes.\n\n"
+        f"Run ID: `{run_id}`\n"
+        f"Command: `{command_text}`\n"
+        "Possible reasons: the request was already satisfied, unclear, or no safe edit was needed."
+    )
+
+
+def followup_blocked_comment(run_id: str, command_text: str, reason: str, details: list[str]) -> str:
+    detail_text = "; ".join(details[:3])
+    return (
+        "Follow-up blocked for safety.\n\n"
+        f"Run ID: `{run_id}`\n"
+        f"Command: `{command_text}`\n"
+        f"Reason: `{reason}`\n"
+        f"Details: {detail_text}"
+    )
+
+
+def followup_failed_comment(run_id: str, command_text: str, stage: str, error_summary: str) -> str:
+    return (
+        "Follow-up failed.\n\n"
+        f"Run ID: `{run_id}`\n"
+        f"Command: `{command_text}`\n"
+        f"Stage: `{stage}`\n"
+        f"Error: {error_summary}"
+    )
+
+
+def followup_pushed_comment(run_id: str, command_text: str, commit_sha: str, pr_url: str) -> str:
+    return (
+        "Follow-up changes pushed to PR.\n\n"
+        f"Run ID: `{run_id}`\n"
+        f"Command: `{command_text}`\n"
+        f"Commit: `{commit_sha[:8]}`\n"
+        f"PR: {pr_url}"
+    )

@@ -23,6 +23,10 @@ LABEL_STYLES = {
     "agent-failed": ("b60205", "Agent failed while working on this issue."),
     "agent-no-changes": ("5319e7", "Agent ran but produced no file changes."),
     "agent-blocked": ("d93f0b", "Agent could not safely continue without intervention."),
+    "agent-followup": ("ededed", "PR has a follow-up command for the agent."),
+    "agent-followup-running": ("fbca04", "Agent is processing a follow-up command on this PR."),
+    "agent-followup-done": ("0e8a16", "Agent completed a follow-up command on this PR."),
+    "agent-followup-failed": ("b60205", "Agent failed while processing a follow-up command on this PR."),
 }
 
 
@@ -154,3 +158,63 @@ def _existing_label_names(config: AgentConfig) -> set[str]:
         return set()
     labels = json.loads(result.stdout or "[]")
     return {label["name"] for label in labels}
+
+
+# Rev 08: PR follow-up helpers
+def list_open_prs(config: AgentConfig) -> list[dict]:
+    result = run(
+        [
+            "gh",
+            "pr",
+            "list",
+            "--repo",
+            config.owner_repo,
+            "--state",
+            "open",
+            "--limit",
+            "50",
+            "--json",
+            "number,title,headRefName,baseRefName,labels,url",
+        ],
+        check=False,
+    )
+    if result.returncode != 0:
+        return []
+    try:
+        return json.loads(result.stdout or "[]")
+    except json.JSONDecodeError:
+        return []
+
+
+def get_pr_details(config: AgentConfig, pr_number: int) -> dict | None:
+    result = run(
+        [
+            "gh",
+            "pr",
+            "view",
+            str(pr_number),
+            "--repo",
+            config.owner_repo,
+            "--json",
+            "comments,headRefName,baseRefName,title,url",
+        ],
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        return json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        return None
+
+
+def comment_pr(config: AgentConfig, pr_number: int, body: str) -> None:
+    run(["gh", "pr", "comment", str(pr_number), "--repo", config.owner_repo, "--body", body])
+
+
+def add_label_to_pr_or_issue(config: AgentConfig, number: int, label: str) -> None:
+    run(["gh", "issue", "edit", str(number), "--repo", config.owner_repo, "--add-label", label])
+
+
+def remove_label_from_pr_or_issue(config: AgentConfig, number: int, label: str) -> None:
+    run(["gh", "issue", "edit", str(number), "--repo", config.owner_repo, "--remove-label", label], check=False)

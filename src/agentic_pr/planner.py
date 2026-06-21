@@ -3,10 +3,12 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Union
 
 from agentic_pr.command import run
 from agentic_pr.config import AgentConfig
 from agentic_pr.github_ops import Issue
+from agentic_pr.pr_followup import FollowupTask
 from agentic_pr.repo_context import RepoContext
 
 
@@ -23,10 +25,13 @@ class PlannerResult:
     error: str | None = None
 
 
-def run_planner(config: AgentConfig, issue: Issue, context: RepoContext, run_id: str) -> PlannerResult:
+PlannerInput = Union[Issue, FollowupTask]
+
+
+def run_planner(config: AgentConfig, input_obj: PlannerInput, context: RepoContext, run_id: str) -> PlannerResult:
     config.run_dir.mkdir(parents=True, exist_ok=True)
     output_file = config.run_dir / f"{run_id}-planner.md"
-    prompt = _planner_prompt(issue, context)
+    prompt = _planner_prompt(input_obj, context)
     planner_model = ollama_cli_model(config.planner_model)
     result = run(["ollama", "run", planner_model], input_text=prompt, check=False, timeout=config.planner_timeout_seconds)
     if result.timed_out:
@@ -65,7 +70,16 @@ def save_planner_fallback(config: AgentConfig, run_id: str, message: str) -> Pat
     return path
 
 
-def _planner_prompt(issue: Issue, context: RepoContext) -> str:
+def _planner_prompt(input_obj: PlannerInput, context: RepoContext) -> str:
+    if isinstance(input_obj, Issue):
+        title = input_obj.title
+        body = input_obj.body
+        header = "GitHub issue"
+    else:
+        title = input_obj.pr_title
+        body = f"Follow-up command: {input_obj.command_text}\n\nOriginal PR: #{input_obj.pr_number} ({input_obj.pr_title})"
+        header = "PR follow-up command"
+
     return f"""You are planning a code change before Aider implements it.
 
 Return a concise Markdown plan with these headings exactly:
@@ -81,9 +95,9 @@ Test plan
 Risks
 Final implementation prompt for Aider
 
-Issue title: {issue.title}
-Issue body:
-{issue.body}
+{header}: {title}
+{header} body:
+{body}
 
 Repository context:
 {context.as_text()}

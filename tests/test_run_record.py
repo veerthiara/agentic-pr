@@ -43,3 +43,37 @@ class RunRecordTests(unittest.TestCase):
             self.assertEqual(data["planned_files_to_create"], ["main.py"])
             self.assertEqual(list_run_records(Path(tmp)), [path])
             self.assertEqual(latest_run_record(Path(tmp)), path)
+
+    def test_run_record_supports_pr_followup_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            record = RunRecord(
+                run_id="run-20260620-120000-pr-5-c1",
+                issue_number=0,
+                issue_title="",
+                owner_repo="octo/repo",
+                model="ollama/qwen3-coder:30b",
+                base_branch="main",
+                agent_branch="agent/issue-5-123",
+                status="pr_created",
+                pr_url="https://example.test/pr/5",
+                started_at="2026-06-20T12:00:00",
+                finished_at="2026-06-20T12:05:00",
+                log_file="/tmp/run.log",
+                error_summary=None,
+                run_type="pr_followup",
+                pr_number=5,
+                pr_title="Add FastAPI app",
+                comment_id="c1",
+                command_text="add tests",
+                commit_sha="abc123",
+            )
+
+            path = write_run_record(Path(tmp), record)
+            data = json.loads(path.read_text())
+
+            self.assertEqual(data["run_type"], "pr_followup")
+            self.assertEqual(data["pr_number"], 5)
+            self.assertEqual(data["pr_title"], "Add FastAPI app")
+            self.assertEqual(data["comment_id"], "c1")
+            self.assertEqual(data["command_text"], "add tests")
+            self.assertEqual(data["commit_sha"], "abc123")

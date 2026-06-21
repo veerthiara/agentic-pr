@@ -288,3 +288,100 @@ var/run/<run_id>-planner.md
 GitHub issue comments stay short. You should see comments for planner started/completed, planner failed with fallback, and implementation started.
 
 The run record in `var/runs/` now includes planner status, planner output path, plan summary, planned files to modify/create, and planned test plan.
+
+## PR Follow-up (Rev 08)
+
+Rev 08 adds iterative PR repair from PR comments. After the agent creates a PR, you can review it and comment with `/agent <command>` to have the agent make additional changes to the same PR branch.
+
+### How it works
+
+1. You add a comment on an open PR starting with `/agent` (configurable via `PR_FOLLOWUP_COMMAND_PREFIX`)
+2. The poller picks up the comment on its next cycle
+3. The agent checks out the existing PR branch
+4. Runs Aider with a follow-up prompt that includes the PR context and your command
+5. If changes are made, commits and pushes to the same PR branch
+6. Comments on the PR with the commit SHA
+
+### Config
+
+```env
+ENABLE_PR_FOLLOWUPS=true
+PR_FOLLOWUP_COMMAND_PREFIX=/agent
+PR_FOLLOWUP_REQUIRE_LABEL=false
+LABEL_FOLLOWUP=agent-followup
+LABEL_FOLLOWUP_RUNNING=agent-followup-running
+LABEL_FOLLOWUP_DONE=agent-followup-done
+LABEL_FOLLOWUP_FAILED=agent-followup-failed
+COMMENT_STATE_DIR=/Users/vsinghthiara/Developer/Learning/agentic-pr/var/comment-state
+MAX_FOLLOWUP_COMMENTS_PER_CYCLE=1
+```
+
+### Labels
+
+- `agent-followup` - PR has a follow-up command for the agent
+- `agent-followup-running` - Agent is processing a follow-up command
+- `agent-followup-done` - Agent completed a follow-up command
+- `agent-followup-failed` - Agent failed while processing a follow-up
+
+### Running manually
+
+```sh
+make run-followup-once CONFIG=config/agent-test.env
+```
+
+Or let the poller handle it automatically:
+
+```sh
+make poll CONFIG=config/agent-test.env
+```
+
+### Comment state tracking
+
+Processed comment IDs are stored locally under `var/comment-state/` so the same comment is never processed twice. One JSON file per repo/PR.
+
+### Example PR comment
+
+```
+/agent add one small test for this change and update README if needed
+```
+
+### What the agent does
+
+- Does NOT create a new branch
+- Does NOT create a new PR
+- Does NOT auto-merge
+- Makes minimal additional changes to address the follow-up command
+- Preserves existing PR intent
+- Adds/updates tests when appropriate
+- Updates README/docs when behavior changes
+
+### Troubleshooting
+
+- Check `var/comment-state/` to see which comments have been processed
+- Check `var/runs/` for follow-up run records (run_type: "pr_followup")
+- If a follow-up fails, the PR gets `agent-followup-failed` label and a comment with the error
+- Full logs stay local under `logs/`
+
+### Rev 08 acceptance test
+
+Prerequisites:
+- There is an open PR created by the agent
+- Service is running or poller is running
+
+Manual test:
+1. On the open PR, add this comment:
+   ```
+   /agent add one small test for this change and update README if needed
+   ```
+2. If testing manually, run:
+   ```sh
+   make run-followup-once CONFIG=config/agent-test.env
+   ```
+3. Expected:
+   - PR gets an accepted/started comment
+   - Mac Studio checks out the PR branch
+   - Aider runs
+   - If changes are made, a new commit is pushed to the same PR
+   - PR gets success comment with commit SHA
+   - var/runs has a pr_followup run record
+   - var/comment-state records the processed comment ID

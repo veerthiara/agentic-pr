@@ -56,6 +56,16 @@ class AgentConfig:
     repo_context_max_bytes: int
     planner_timeout_seconds: int
     comment_plan: bool
+    # Rev 08: PR follow-up
+    enable_pr_followups: bool
+    pr_followup_command_prefix: str
+    pr_followup_require_label: bool
+    label_followup: str
+    label_followup_running: str
+    label_followup_done: str
+    label_followup_failed: str
+    comment_state_dir: Path
+    max_followup_comments_per_cycle: int
 
 
 class ConfigError(ValueError):
@@ -133,6 +143,16 @@ def load_config(path: str | Path) -> AgentConfig:
         repo_context_max_bytes=_positive_int(values.get("REPO_CONTEXT_MAX_BYTES", "120000"), "REPO_CONTEXT_MAX_BYTES"),
         planner_timeout_seconds=_positive_int(values.get("PLANNER_TIMEOUT_SECONDS", "900"), "PLANNER_TIMEOUT_SECONDS"),
         comment_plan=_bool(values.get("COMMENT_PLAN", "true"), "COMMENT_PLAN"),
+        # Rev 08: PR follow-up
+        enable_pr_followups=_bool(values.get("ENABLE_PR_FOLLOWUPS", "true"), "ENABLE_PR_FOLLOWUPS"),
+        pr_followup_command_prefix=values.get("PR_FOLLOWUP_COMMAND_PREFIX", "/agent"),
+        pr_followup_require_label=_bool(values.get("PR_FOLLOWUP_REQUIRE_LABEL", "false"), "PR_FOLLOWUP_REQUIRE_LABEL"),
+        label_followup=values.get("LABEL_FOLLOWUP", "agent-followup"),
+        label_followup_running=values.get("LABEL_FOLLOWUP_RUNNING", "agent-followup-running"),
+        label_followup_done=values.get("LABEL_FOLLOWUP_DONE", "agent-followup-done"),
+        label_followup_failed=values.get("LABEL_FOLLOWUP_FAILED", "agent-followup-failed"),
+        comment_state_dir=_resolve_path(Path(values.get("COMMENT_STATE_DIR", repo_path / "var" / "comment-state")), repo_path),
+        max_followup_comments_per_cycle=_positive_int(values.get("MAX_FOLLOWUP_COMMENTS_PER_CYCLE", "1"), "MAX_FOLLOWUP_COMMENTS_PER_CYCLE"),
     )
 
 
