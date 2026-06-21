@@ -231,3 +231,56 @@ def followup_pushed_comment(run_id: str, command_text: str, commit_sha: str, pr_
         f"Commit: `{commit_sha[:8]}`\n"
         f"PR: {pr_url}"
     )
+
+
+# Rev 09: CI-aware PR follow-up comment templates
+def ci_context_collecting_comment(run_id: str, command_alias: str) -> str:
+    return (
+        "Collecting CI context for follow-up run.\n\n"
+        f"Run ID: `{run_id}`\n"
+        f"Command: `{command_alias}`"
+    )
+
+
+def ci_context_no_failing_checks_comment(run_id: str) -> str:
+    return (
+        "No failing checks found for this PR.\n\n"
+        f"Run ID: `{run_id}`\n"
+        "CI_REQUIRE_FAILED_CHECKS is enabled, so no fix was attempted."
+    )
+
+
+def ci_context_no_checks_comment(run_id: str) -> str:
+    return (
+        "No GitHub checks found for this PR.\n\n"
+        f"Run ID: `{run_id}`\n"
+        "Continuing without CI context."
+    )
+
+
+def ci_fix_pushed_comment(run_id: str, command_text: str, commit_sha: str, pr_url: str) -> str:
+    return (
+        "CI fix pushed to PR.\n\n"
+        f"Run ID: `{run_id}`\n"
+        f"Command: `{command_text}`\n"
+        f"Commit: `{commit_sha[:8]}`\n"
+        f"PR: {pr_url}"
+    )
+
+
+def ci_fix_failed_comment(run_id: str, command_text: str, stage: str, error_summary: str) -> str:
+    return (
+        "CI fix failed.\n\n"
+        f"Run ID: `{run_id}`\n"
+        f"Command: `{command_text}`\n"
+        f"Stage: `{stage}`\n"
+        f"Error: {error_summary}"
+    )
+
+
+def ci_logs_unavailable_comment(run_id: str, command_text: str) -> str:
+    return (
+        "CI logs unavailable, continuing with available context.\n\n"
+        f"Run ID: `{run_id}`\n"
+        f"Command: `{command_text}`"
+    )

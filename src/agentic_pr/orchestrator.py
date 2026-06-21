@@ -8,6 +8,7 @@ from typing import Literal
 from agentic_pr.aider_runner import run_aider
 from agentic_pr.command import run
 from agentic_pr.config import AgentConfig
+from agentic_pr.ci_context import CIContext, build_ci_context
 from agentic_pr.git_ops import branch_name, checkout_base_and_reset, checkout_existing_branch, commit_all, create_branch, current_commit, has_changes, push_branch
 from agentic_pr.github_ops import add_label_to_pr_or_issue, comment_issue, comment_pr, create_pr, get_oldest_todo_issue, mark_blocked, mark_done, mark_failed, mark_no_changes, remove_label_from_pr_or_issue, set_running
 from agentic_pr.lock import FileLock, LockAlreadyHeld
@@ -40,6 +41,12 @@ from agentic_pr.status import (
     short_error,
     start_comment,
     validation_failed_comment,
+    ci_context_collecting_comment,
+    ci_context_no_failing_checks_comment,
+    ci_context_no_checks_comment,
+    ci_fix_pushed_comment,
+    ci_fix_failed_comment,
+    ci_logs_unavailable_comment,
 )
 
 RunStatus = Literal["no_issue", "no_changes", "pr_created", "failed", "blocked"]
@@ -260,6 +267,7 @@ def run_pr_followup_once(config: AgentConfig) -> FollowupResult:
     started_at = _now_iso()
     log_file = None
     planner_result: PlannerResult | None = None
+    ci_context: CIContext | None = None
 
     try:
         task = find_pending_followup(config)
@@ -279,6 +287,37 @@ def run_pr_followup_once(config: AgentConfig) -> FollowupResult:
         stage = "checkout_pr_branch"
         checkout_existing_branch(config.repo_path, task.head_branch, task.base_branch)
 
+        # Collect CI context if this is a CI fix
+        if task.is_ci_fix and config.enable_ci_context:
+            stage = "collect_ci_context"
+            if config.comment_on_start:
+                comment_pr(config, task.pr_number, ci_context_collecting_comment(run_id, task.ci_command_alias or "fix-ci"))
+            ci_context = build_ci_context(config, task.pr_number)
+            
+            # Check if we should require failing checks
+            if config.ci_require_failed_checks and not ci_context.failing_checks_found:
+                remove_label_from_pr_or_issue(config, task.pr_number, config.label_followup_running)
+                if config.comment_on_failure:
+                    comment_pr(config, task.pr_number, ci_context_no_failing_checks_comment(run_id))
+                _write_followup_record(
+                    config, task=task, run_id=run_id, branch=task.head_branch, 
+                    status="no_failed_checks", started_at=started_at, finished_at=_now_iso(),
+                    log_file=log_file, error_summary="No failing checks found (CI_REQUIRE_FAILED_CHECKS=true)",
+                    planner_result=planner_result, commit_sha=None,
+                    is_ci_fix=True, ci_checks_found=ci_context.checks_found,
+                    ci_failing_checks_found=ci_context.failing_checks_found,
+                    ci_failed_check_names=ci_context.failed_check_names,
+                    ci_context_summary=ci_context.summary,
+                    ci_log_excerpt=ci_context.log_excerpt,
+                    ci_warnings=ci_context.warnings,
+                )
+                mark_comment_processed(config, task)
+                return FollowupResult("no_failed_checks", "No failing checks found (CI_REQUIRE_FAILED_CHECKS=true)", pr_number=task.pr_number, run_id=run_id)
+            
+            if not ci_context.checks_found:
+                if config.comment_on_start:
+                    comment_pr(config, task.pr_number, ci_context_no_checks_comment(run_id))
+
         stage = "planner"
         if config.enable_planner:
             if config.comment_plan:
@@ -291,7 +330,7 @@ def run_pr_followup_once(config: AgentConfig) -> FollowupResult:
                 elif planner_result:
                     comment_pr(config, task.pr_number, planner_failed_comment(run_id, planner_result.error))
 
-        implementation_prompt = build_followup_prompt(task=task, run_id=run_id, planner_result=planner_result)
+        implementation_prompt = build_followup_prompt(task=task, run_id=run_id, planner_result=planner_result, ci_context=ci_context)
 
         stage = "run_aider"
         aider_result = run_aider(config, task, run_id, prompt=implementation_prompt)
@@ -301,7 +340,7 @@ def run_pr_followup_once(config: AgentConfig) -> FollowupResult:
             add_label_to_pr_or_issue(config, task.pr_number, config.label_followup_failed)
             if config.comment_on_failure:
                 comment_pr(config, task.pr_number, followup_failed_comment(run_id, task.command_text, "run_aider", f"Aider timed out after {config.aider_timeout_seconds} seconds"))
-            _write_followup_record(config, task=task, run_id=run_id, branch=task.head_branch, status="failed", started_at=started_at, finished_at=_now_iso(), log_file=log_file, error_summary=f"Aider timed out after {config.aider_timeout_seconds} seconds", planner_result=planner_result, commit_sha=None)
+            _write_followup_record(config, task=task, run_id=run_id, branch=task.head_branch, status="failed", started_at=started_at, finished_at=_now_iso(), log_file=log_file, error_summary=f"Aider timed out after {config.aider_timeout_seconds} seconds", planner_result=planner_result, commit_sha=None, is_ci_fix=task.is_ci_fix, ci_checks_found=ci_context.checks_found if ci_context else False, ci_failing_checks_found=ci_context.failing_checks_found if ci_context else False, ci_failed_check_names=ci_context.failed_check_names if ci_context else None, ci_context_summary=ci_context.summary if ci_context else None, ci_log_excerpt=ci_context.log_excerpt if ci_context else None, ci_warnings=ci_context.warnings if ci_context else None)
             mark_comment_processed(config, task)
             return FollowupResult("failed", f"Aider timed out after {config.aider_timeout_seconds} seconds", pr_number=task.pr_number, run_id=run_id)
 
@@ -310,7 +349,7 @@ def run_pr_followup_once(config: AgentConfig) -> FollowupResult:
             remove_label_from_pr_or_issue(config, task.pr_number, config.label_followup_running)
             if config.comment_on_no_changes:
                 comment_pr(config, task.pr_number, followup_no_changes_comment(run_id, task.command_text))
-            _write_followup_record(config, task=task, run_id=run_id, branch=task.head_branch, status="no_changes", started_at=started_at, finished_at=_now_iso(), log_file=log_file, error_summary=None, planner_result=planner_result, commit_sha=None)
+            _write_followup_record(config, task=task, run_id=run_id, branch=task.head_branch, status="no_changes", started_at=started_at, finished_at=_now_iso(), log_file=log_file, error_summary=None, planner_result=planner_result, commit_sha=None, is_ci_fix=task.is_ci_fix, ci_checks_found=ci_context.checks_found if ci_context else False, ci_failing_checks_found=ci_context.failing_checks_found if ci_context else False, ci_failed_check_names=ci_context.failed_check_names if ci_context else None, ci_context_summary=ci_context.summary if ci_context else None, ci_log_excerpt=ci_context.log_excerpt if ci_context else None, ci_warnings=ci_context.warnings if ci_context else None)
             mark_comment_processed(config, task)
             return FollowupResult("no_changes", "Aider produced no changes.", pr_number=task.pr_number, run_id=run_id)
 
@@ -320,7 +359,7 @@ def run_pr_followup_once(config: AgentConfig) -> FollowupResult:
             remove_label_from_pr_or_issue(config, task.pr_number, config.label_followup_running)
             add_label_to_pr_or_issue(config, task.pr_number, config.label_followup_failed)
             comment_pr(config, task.pr_number, followup_blocked_comment(run_id, task.command_text, safety.reason or "safety_failed", safety.details))
-            _write_followup_record(config, task=task, run_id=run_id, branch=task.head_branch, status="blocked", started_at=started_at, finished_at=_now_iso(), log_file=log_file, error_summary=f"{safety.reason}: {'; '.join(safety.details[:3])}", planner_result=planner_result, commit_sha=None)
+            _write_followup_record(config, task=task, run_id=run_id, branch=task.head_branch, status="blocked", started_at=started_at, finished_at=_now_iso(), log_file=log_file, error_summary=f"{safety.reason}: {'; '.join(safety.details[:3])}", planner_result=planner_result, commit_sha=None, is_ci_fix=task.is_ci_fix, ci_checks_found=ci_context.checks_found if ci_context else False, ci_failing_checks_found=ci_context.failing_checks_found if ci_context else False, ci_failed_check_names=ci_context.failed_check_names if ci_context else None, ci_context_summary=ci_context.summary if ci_context else None, ci_log_excerpt=ci_context.log_excerpt if ci_context else None, ci_warnings=ci_context.warnings if ci_context else None)
             mark_comment_processed(config, task)
             return FollowupResult("blocked", f"{safety.reason}: {'; '.join(safety.details[:3])}", pr_number=task.pr_number, run_id=run_id)
 
@@ -331,7 +370,7 @@ def run_pr_followup_once(config: AgentConfig) -> FollowupResult:
             add_label_to_pr_or_issue(config, task.pr_number, config.label_followup_failed)
             if config.comment_on_failure:
                 comment_pr(config, task.pr_number, followup_failed_comment(run_id, task.command_text, "lint", validation))
-            _write_followup_record(config, task=task, run_id=run_id, branch=task.head_branch, status="failed", started_at=started_at, finished_at=_now_iso(), log_file=log_file, error_summary=validation, planner_result=planner_result, commit_sha=None)
+            _write_followup_record(config, task=task, run_id=run_id, branch=task.head_branch, status="failed", started_at=started_at, finished_at=_now_iso(), log_file=log_file, error_summary=validation, planner_result=planner_result, commit_sha=None, is_ci_fix=task.is_ci_fix, ci_checks_found=ci_context.checks_found if ci_context else False, ci_failing_checks_found=ci_context.failing_checks_found if ci_context else False, ci_failed_check_names=ci_context.failed_check_names if ci_context else None, ci_context_summary=ci_context.summary if ci_context else None, ci_log_excerpt=ci_context.log_excerpt if ci_context else None, ci_warnings=ci_context.warnings if ci_context else None)
             mark_comment_processed(config, task)
             return FollowupResult("failed", validation, pr_number=task.pr_number, run_id=run_id)
 
@@ -342,7 +381,7 @@ def run_pr_followup_once(config: AgentConfig) -> FollowupResult:
             add_label_to_pr_or_issue(config, task.pr_number, config.label_followup_failed)
             if config.comment_on_failure:
                 comment_pr(config, task.pr_number, followup_failed_comment(run_id, task.command_text, "test", validation))
-            _write_followup_record(config, task=task, run_id=run_id, branch=task.head_branch, status="failed", started_at=started_at, finished_at=_now_iso(), log_file=log_file, error_summary=validation, planner_result=planner_result, commit_sha=None)
+            _write_followup_record(config, task=task, run_id=run_id, branch=task.head_branch, status="failed", started_at=started_at, finished_at=_now_iso(), log_file=log_file, error_summary=validation, planner_result=planner_result, commit_sha=None, is_ci_fix=task.is_ci_fix, ci_checks_found=ci_context.checks_found if ci_context else False, ci_failing_checks_found=ci_context.failing_checks_found if ci_context else False, ci_failed_check_names=ci_context.failed_check_names if ci_context else None, ci_context_summary=ci_context.summary if ci_context else None, ci_log_excerpt=ci_context.log_excerpt if ci_context else None, ci_warnings=ci_context.warnings if ci_context else None)
             mark_comment_processed(config, task)
             return FollowupResult("failed", validation, pr_number=task.pr_number, run_id=run_id)
 
@@ -357,8 +396,11 @@ def run_pr_followup_once(config: AgentConfig) -> FollowupResult:
         remove_label_from_pr_or_issue(config, task.pr_number, config.label_followup_running)
         add_label_to_pr_or_issue(config, task.pr_number, config.label_followup_done)
         if config.comment_on_success:
-            comment_pr(config, task.pr_number, followup_pushed_comment(run_id, task.command_text, commit_sha, task.pr_url))
-        _write_followup_record(config, task=task, run_id=run_id, branch=task.head_branch, status="pr_updated", started_at=started_at, finished_at=_now_iso(), log_file=log_file, error_summary=None, planner_result=planner_result, commit_sha=commit_sha)
+            if task.is_ci_fix:
+                comment_pr(config, task.pr_number, ci_fix_pushed_comment(run_id, task.command_text, commit_sha, task.pr_url))
+            else:
+                comment_pr(config, task.pr_number, followup_pushed_comment(run_id, task.command_text, commit_sha, task.pr_url))
+        _write_followup_record(config, task=task, run_id=run_id, branch=task.head_branch, status="pr_updated", started_at=started_at, finished_at=_now_iso(), log_file=log_file, error_summary=None, planner_result=planner_result, commit_sha=commit_sha, is_ci_fix=task.is_ci_fix, ci_checks_found=ci_context.checks_found if ci_context else False, ci_failing_checks_found=ci_context.failing_checks_found if ci_context else False, ci_failed_check_names=ci_context.failed_check_names if ci_context else None, ci_context_summary=ci_context.summary if ci_context else None, ci_log_excerpt=ci_context.log_excerpt if ci_context else None, ci_warnings=ci_context.warnings if ci_context else None)
         mark_comment_processed(config, task)
         return FollowupResult("pr_updated", f"Pushed follow-up commit {commit_sha[:8]} to PR #{task.pr_number}", pr_number=task.pr_number, run_id=run_id, commit_sha=commit_sha)
 
@@ -368,8 +410,11 @@ def run_pr_followup_once(config: AgentConfig) -> FollowupResult:
             remove_label_from_pr_or_issue(config, task.pr_number, config.label_followup_running)
             add_label_to_pr_or_issue(config, task.pr_number, config.label_followup_failed)
             if config.comment_on_failure:
-                comment_pr(config, task.pr_number, followup_failed_comment(run_id, task.command_text, stage, error_summary))
-            _write_followup_record(config, task=task, run_id=run_id, branch=task.head_branch, status="failed", started_at=started_at, finished_at=_now_iso(), log_file=log_file, error_summary=error_summary, planner_result=planner_result, commit_sha=None)
+                if task.is_ci_fix:
+                    comment_pr(config, task.pr_number, ci_fix_failed_comment(run_id, task.command_text, stage, error_summary))
+                else:
+                    comment_pr(config, task.pr_number, followup_failed_comment(run_id, task.command_text, stage, error_summary))
+            _write_followup_record(config, task=task, run_id=run_id, branch=task.head_branch, status="failed", started_at=started_at, finished_at=_now_iso(), log_file=log_file, error_summary=error_summary, planner_result=planner_result, commit_sha=None, is_ci_fix=task.is_ci_fix, ci_checks_found=ci_context.checks_found if ci_context else False, ci_failing_checks_found=ci_context.failing_checks_found if ci_context else False, ci_failed_check_names=ci_context.failed_check_names if ci_context else None, ci_context_summary=ci_context.summary if ci_context else None, ci_log_excerpt=ci_context.log_excerpt if ci_context else None, ci_warnings=ci_context.warnings if ci_context else None)
             mark_comment_processed(config, task)
             return FollowupResult("failed", error_summary, pr_number=task.pr_number, run_id=run_id)
         return FollowupResult("failed", error_summary)
@@ -390,7 +435,21 @@ def _write_followup_record(
     error_summary: str | None,
     planner_result: PlannerResult | None,
     commit_sha: str | None,
+    is_ci_fix: bool = False,
+    ci_checks_found: bool = False,
+    ci_failing_checks_found: bool = False,
+    ci_failed_check_names: list[str] | None = None,
+    ci_context_summary: str | None = None,
+    ci_log_excerpt: str | None = None,
+    ci_warnings: list[str] | None = None,
 ) -> None:
+    # Save CI log excerpt to separate file if it's large
+    ci_log_excerpt_file = None
+    if ci_log_excerpt and len(ci_log_excerpt) > 1000:
+        ci_log_path = config.run_dir / f"{run_id}-ci-context.md"
+        ci_log_path.write_text(ci_log_excerpt)
+        ci_log_excerpt_file = str(ci_log_path)
+    
     write_run_record(
         config.run_record_dir,
         RunRecord(
@@ -420,5 +479,13 @@ def _write_followup_record(
             comment_id=task.comment_id,
             command_text=task.command_text,
             commit_sha=commit_sha,
+            is_ci_fix=is_ci_fix,
+            ci_checks_found=ci_checks_found,
+            ci_failing_checks_found=ci_failing_checks_found,
+            ci_failed_check_names=ci_failed_check_names,
+            ci_context_summary=ci_context_summary,
+            ci_log_excerpt=ci_log_excerpt,
+            ci_log_excerpt_file=ci_log_excerpt_file,
+            ci_warnings=ci_warnings,
         ),
     )

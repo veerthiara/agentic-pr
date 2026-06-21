@@ -26,6 +26,12 @@ from agentic_pr.status import (
     followup_blocked_comment,
     followup_failed_comment,
     followup_pushed_comment,
+    ci_context_collecting_comment,
+    ci_context_no_failing_checks_comment,
+    ci_context_no_checks_comment,
+    ci_fix_pushed_comment,
+    ci_fix_failed_comment,
+    ci_logs_unavailable_comment,
 )
 
 
@@ -63,6 +69,12 @@ class StatusTests(unittest.TestCase):
         self.assertIn("run-1", followup_blocked_comment("run-1", "fix tests", "blocked_path", ["Blocked path: .env"]))
         self.assertIn("run-1", followup_failed_comment("run-1", "fix tests", "run_aider", "boom"))
         self.assertIn("run-1", followup_pushed_comment("run-1", "fix tests", "abc123def", "https://github.com/octo/repo/pull/5"))
+        self.assertIn("Collecting CI context", ci_context_collecting_comment("run-1", "/agent fix-ci"))
+        self.assertIn("No failing checks found", ci_context_no_failing_checks_comment("run-1"))
+        self.assertIn("No GitHub checks found", ci_context_no_checks_comment("run-1"))
+        self.assertIn("CI fix pushed", ci_fix_pushed_comment("run-1", "fix-ci", "abc123def", "https://github.com/octo/repo/pull/5"))
+        self.assertIn("CI fix failed", ci_fix_failed_comment("run-1", "fix-ci", "run_aider", "boom"))
+        self.assertIn("CI logs unavailable", ci_logs_unavailable_comment("run-1", "fix-ci"))
 
     def test_pr_body_generation(self) -> None:
         config = _config()
@@ -134,4 +146,10 @@ def _config() -> AgentConfig:
         label_followup_failed="agent-followup-failed",
         comment_state_dir=root / "comment-state",
         max_followup_comments_per_cycle=1,
+        enable_ci_context=True,
+        ci_command_aliases=("/agent fix-ci", "/agent fix checks", "/agent fix failing tests"),
+        ci_log_max_lines=250,
+        ci_log_max_bytes=40000,
+        ci_include_successful_checks=False,
+        ci_require_failed_checks=False,
     )

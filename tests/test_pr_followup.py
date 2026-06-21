@@ -118,6 +118,70 @@ class PrFollowupTests(unittest.TestCase):
             self.assertIsNotNone(task)
             self.assertEqual(task.pr_number, 5)
 
+    def test_ci_fix_ci_command_detected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = _config(Path(tmp))
+            prs = [{"number": 5, "title": "Test PR", "headRefName": "b", "baseRefName": "main", "labels": [], "url": ""}]
+            details = {"comments": [{"id": "c1", "body": "/agent fix-ci", "author": {"login": "user1"}}], "headRefName": "b", "baseRefName": "main", "title": "Test PR", "url": ""}
+            with patch("agentic_pr.pr_followup.run") as mock_run:
+                mock_run.side_effect = [
+                    CommandResult(["gh"], 0, json_dumps(prs), "", False),
+                    CommandResult(["gh"], 0, json_dumps(details), "", False),
+                ]
+                task = find_pending_followup(config)
+
+            self.assertIsNotNone(task)
+            self.assertTrue(task.is_ci_fix)
+            self.assertEqual(task.ci_command_alias, "/agent fix-ci")
+
+    def test_ci_fix_checks_command_detected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = _config(Path(tmp))
+            prs = [{"number": 5, "title": "Test PR", "headRefName": "b", "baseRefName": "main", "labels": [], "url": ""}]
+            details = {"comments": [{"id": "c1", "body": "/agent fix checks", "author": {"login": "user1"}}], "headRefName": "b", "baseRefName": "main", "title": "Test PR", "url": ""}
+            with patch("agentic_pr.pr_followup.run") as mock_run:
+                mock_run.side_effect = [
+                    CommandResult(["gh"], 0, json_dumps(prs), "", False),
+                    CommandResult(["gh"], 0, json_dumps(details), "", False),
+                ]
+                task = find_pending_followup(config)
+
+            self.assertIsNotNone(task)
+            self.assertTrue(task.is_ci_fix)
+            self.assertEqual(task.ci_command_alias, "/agent fix checks")
+
+    def test_ci_fix_failing_tests_command_detected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = _config(Path(tmp))
+            prs = [{"number": 5, "title": "Test PR", "headRefName": "b", "baseRefName": "main", "labels": [], "url": ""}]
+            details = {"comments": [{"id": "c1", "body": "/agent fix failing tests", "author": {"login": "user1"}}], "headRefName": "b", "baseRefName": "main", "title": "Test PR", "url": ""}
+            with patch("agentic_pr.pr_followup.run") as mock_run:
+                mock_run.side_effect = [
+                    CommandResult(["gh"], 0, json_dumps(prs), "", False),
+                    CommandResult(["gh"], 0, json_dumps(details), "", False),
+                ]
+                task = find_pending_followup(config)
+
+            self.assertIsNotNone(task)
+            self.assertTrue(task.is_ci_fix)
+            self.assertEqual(task.ci_command_alias, "/agent fix failing tests")
+
+    def test_generic_agent_command_not_ci_fix(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = _config(Path(tmp))
+            prs = [{"number": 5, "title": "Test PR", "headRefName": "b", "baseRefName": "main", "labels": [], "url": ""}]
+            details = {"comments": [{"id": "c1", "body": "/agent update README", "author": {"login": "user1"}}], "headRefName": "b", "baseRefName": "main", "title": "Test PR", "url": ""}
+            with patch("agentic_pr.pr_followup.run") as mock_run:
+                mock_run.side_effect = [
+                    CommandResult(["gh"], 0, json_dumps(prs), "", False),
+                    CommandResult(["gh"], 0, json_dumps(details), "", False),
+                ]
+                task = find_pending_followup(config)
+
+            self.assertIsNotNone(task)
+            self.assertFalse(task.is_ci_fix)
+            self.assertIsNone(task.ci_command_alias)
+
 
 def json_dumps(obj) -> str:
     import json
@@ -171,4 +235,10 @@ def _config(root: Path, pr_followup_require_label: bool = False) -> AgentConfig:
         label_followup_failed="agent-followup-failed",
         comment_state_dir=root / "comment-state",
         max_followup_comments_per_cycle=1,
+        enable_ci_context=True,
+        ci_command_aliases=("/agent fix-ci", "/agent fix checks", "/agent fix failing tests"),
+        ci_log_max_lines=250,
+        ci_log_max_bytes=40000,
+        ci_include_successful_checks=False,
+        ci_require_failed_checks=False,
     )

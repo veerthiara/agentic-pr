@@ -34,6 +34,15 @@ class RunRecord:
     comment_id: str | None = None
     command_text: str | None = None
     commit_sha: str | None = None
+    # Rev 09: CI-aware PR follow-up fields
+    is_ci_fix: bool = False
+    ci_checks_found: bool = False
+    ci_failing_checks_found: bool = False
+    ci_failed_check_names: list[str] | None = None
+    ci_context_summary: str | None = None
+    ci_log_excerpt: str | None = None
+    ci_log_excerpt_file: str | None = None
+    ci_warnings: list[str] | None = None
 
 
 def write_run_record(directory: Path, record: RunRecord) -> Path:

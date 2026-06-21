@@ -66,6 +66,13 @@ class AgentConfig:
     label_followup_failed: str
     comment_state_dir: Path
     max_followup_comments_per_cycle: int
+    # Rev 09: CI-aware PR follow-up
+    enable_ci_context: bool
+    ci_command_aliases: tuple[str, ...]
+    ci_log_max_lines: int
+    ci_log_max_bytes: int
+    ci_include_successful_checks: bool
+    ci_require_failed_checks: bool
 
 
 class ConfigError(ValueError):
@@ -153,6 +160,13 @@ def load_config(path: str | Path) -> AgentConfig:
         label_followup_failed=values.get("LABEL_FOLLOWUP_FAILED", "agent-followup-failed"),
         comment_state_dir=_resolve_path(Path(values.get("COMMENT_STATE_DIR", repo_path / "var" / "comment-state")), repo_path),
         max_followup_comments_per_cycle=_positive_int(values.get("MAX_FOLLOWUP_COMMENTS_PER_CYCLE", "1"), "MAX_FOLLOWUP_COMMENTS_PER_CYCLE"),
+        # Rev 09: CI-aware PR follow-up
+        enable_ci_context=_bool(values.get("ENABLE_CI_CONTEXT", "true"), "ENABLE_CI_CONTEXT"),
+        ci_command_aliases=tuple(_csv(values.get("CI_COMMAND_ALIASES", "/agent fix-ci,/agent fix checks,/agent fix failing tests"))),
+        ci_log_max_lines=_positive_int(values.get("CI_LOG_MAX_LINES", "250"), "CI_LOG_MAX_LINES"),
+        ci_log_max_bytes=_positive_int(values.get("CI_LOG_MAX_BYTES", "40000"), "CI_LOG_MAX_BYTES"),
+        ci_include_successful_checks=_bool(values.get("CI_INCLUDE_SUCCESSFUL_CHECKS", "false"), "CI_INCLUDE_SUCCESSFUL_CHECKS"),
+        ci_require_failed_checks=_bool(values.get("CI_REQUIRE_FAILED_CHECKS", "false"), "CI_REQUIRE_FAILED_CHECKS"),
     )
 
 

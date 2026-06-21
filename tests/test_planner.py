@@ -72,4 +72,10 @@ def _config(root: Path) -> AgentConfig:
         label_followup_failed="agent-followup-failed",
         comment_state_dir=root / "comment-state",
         max_followup_comments_per_cycle=1,
+        enable_ci_context=True,
+        ci_command_aliases=("/agent fix-ci", "/agent fix checks", "/agent fix failing tests"),
+        ci_log_max_lines=250,
+        ci_log_max_bytes=40000,
+        ci_include_successful_checks=False,
+        ci_require_failed_checks=False,
     )

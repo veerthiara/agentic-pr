@@ -385,3 +385,170 @@ Manual test:
    - PR gets success comment with commit SHA
    - var/runs has a pr_followup run record
    - var/comment-state records the processed comment ID
+
+## CI-Aware PR Follow-up (Rev 09)
+
+Rev 09 adds CI/check awareness for PR follow-up repairs. The agent can now respond to PR comments like `/agent fix-ci` by gathering GitHub check/CI status and failed log context, adding that CI context to the Aider prompt, and pushing a follow-up commit to the same PR branch.
+
+### Supported Commands
+
+- `/agent fix-ci`
+- `/agent fix checks`
+- `/agent fix failing tests`
+
+### How it works
+
+1. You add a comment on an open PR starting with one of the CI command aliases
+2. The poller picks up the comment on its next cycle (or run manually with `make run-followup-once`)
+3. The agent collects CI context:
+   - Lists all GitHub checks for the PR using `gh pr checks`
+   - Identifies failing checks
+   - Fetches log excerpts from failed workflow runs using `gh run view --log-failed`
+   - Respects `CI_LOG_MAX_LINES` and `CI_LOG_MAX_BYTES` limits
+4. Comments on PR that CI context is being collected
+5. Runs optional planner stage with CI context
+6. Runs Aider with CI-aware prompt including:
+   - Failed check names
+   - Log excerpts from failing checks
+   - Instructions to fix root cause, prefer minimal changes
+   - Do not remove tests just to make CI pass
+   - Do not weaken assertions unless clearly correct
+   - Preserve PR's existing intent
+7. If changes are made and safety checks pass, commits and pushes to same PR branch
+8. PR gets success comment with commit SHA
+9. Run record saved with CI fields under `var/runs/`
+10. Comment state recorded under `var/comment-state/`
+
+### Config
+
+```env
+ENABLE_CI_CONTEXT=true
+CI_COMMAND_ALIASES=/agent fix-ci,/agent fix checks,/agent fix failing tests
+CI_LOG_MAX_LINES=250
+CI_LOG_MAX_BYTES=40000
+CI_INCLUDE_SUCCESSFUL_CHECKS=false
+CI_REQUIRE_FAILED_CHECKS=false
+```
+
+### Labels
+
+Uses the same follow-up labels from Rev 08:
+- `agent-followup` - PR has a follow-up command for the agent
+- `agent-followup-running` - Agent is processing a follow-up command
+- `agent-followup-done` - Agent completed a follow-up command
+- `agent-followup-failed` - Agent failed while processing a follow-up
+
+### Running manually
+
+```sh
+make run-followup-once CONFIG=config/agent-test.env
+```
+
+Or let the poller handle it automatically:
+
+```sh
+make poll CONFIG=config/agent-test.env
+```
+
+### CI Summary Command
+
+To inspect CI status without running Aider:
+
+```sh
+make ci-summary CONFIG=config/agent-test.env PR=15
+```
+
+Or directly:
+
+```sh
+PYTHONPATH=src python3 -m agentic_pr.cli ci-summary --config config/agent-test.env --pr 15
+```
+
+### Run Record CI Fields
+
+Rev 09 adds these fields to run records for CI follow-ups:
+- `is_ci_fix` - Whether this was a CI fix run
+- `ci_checks_found` - Whether any checks were found
+- `ci_failing_checks_found` - Whether failing checks were found
+- `ci_failed_check_names` - List of failed check names
+- `ci_context_summary` - Summary of CI context
+- `ci_log_excerpt` - Log excerpt (truncated)
+- `ci_log_excerpt_file` - Path to full log excerpt file if large
+- `ci_warnings` - Any warnings during CI context collection
+
+Large log excerpts are saved to `var/run/<run_id>-ci-context.md`
+
+### Example PR comment
+
+```
+/agent fix-ci
+```
+
+### What the agent does
+
+- Does NOT create a new branch
+- Does NOT create a new PR
+- Does NOT auto-merge
+- Collects CI context before running
+- Makes minimal additional changes to address failing checks
+- Preserves existing PR intent
+- Adds/updates tests when appropriate
+- Updates README/docs when behavior changes
+- Does not remove tests just to make CI pass
+- Does not weaken assertions unless clearly correct
+
+### Fallback behavior
+
+If no GitHub checks exist for the PR:
+- If `CI_REQUIRE_FAILED_CHECKS=true`: Comments that no failing checks found, marks comment processed, does not run Aider
+- If `CI_REQUIRE_FAILED_CHECKS=false`: Comments that no checks found, continues with warning in prompt
+
+If logs cannot be fetched:
+- Continues with available context
+- Adds warning to prompt and run record
+
+### Limitations (Rev 09)
+
+- Only manually triggered by PR comment commands
+- Does not automatically retry failed CI
+- Does not auto-merge PRs
+- If no GitHub Actions/checks exist, may continue with warning
+- Log fetching depends on `gh` CLI capabilities
+
+### Rev 09 acceptance test
+
+Prerequisites:
+- There is an open PR
+- Ideally the PR has a failing GitHub Actions check
+- Service is running or manual command can be used
+
+Manual test:
+1. On an open PR, add this PR comment:
+   ```
+   /agent fix-ci
+   ```
+2. If testing manually, run:
+   ```sh
+   make run-followup-once CONFIG=config/agent-test.env
+   ```
+3. Expected:
+   - PR gets a comment that CI context is being collected
+   - CI context is saved under var/run if available
+   - Aider runs with CI context
+   - If changes are made and safety checks pass, a new commit is pushed to the same PR branch
+   - PR gets a success comment with commit SHA
+   - var/runs has a pr_followup run record with CI fields
+   - var/comment-state records the processed comment ID
+
+Fallback test when no CI exists:
+1. Comment:
+   ```
+   /agent fix-ci
+   ```
+2. Run:
+   ```sh
+   make run-followup-once CONFIG=config/agent-test.env
+   ```
+3. Expected:
+   - It should not crash
+   - It should comment that no failing checks/logs were found or that it is continuing with no CI context

@@ -3,6 +3,7 @@ from __future__ import annotations
 from agentic_pr.github_ops import Issue
 from agentic_pr.planner import PlannerResult
 from agentic_pr.pr_followup import FollowupTask
+from agentic_pr.ci_context import CIContext
 
 
 def build_implementation_prompt(*, issue: Issue, run_id: str, planner_result: PlannerResult | None) -> str:
@@ -39,10 +40,33 @@ def build_followup_prompt(
     task: FollowupTask,
     run_id: str,
     planner_result: PlannerResult | None,
+    ci_context: CIContext | None = None,
 ) -> str:
     plan_text = "No planner output is available. Use the command directly."
     if planner_result and planner_result.ok and planner_result.output:
         plan_text = planner_result.output
+    
+    # Build CI context section if this is a CI fix
+    ci_section = ""
+    if task.is_ci_fix and ci_context:
+        if ci_context.checks_found:
+            ci_section = f"""
+CI Context:
+{ci_context.summary}
+
+Failed Checks: {', '.join(ci_context.failed_check_names) if ci_context.failed_check_names else 'None'}
+
+CI Log Excerpts:
+{ci_context.log_excerpt if ci_context.log_excerpt else 'No log excerpts available.'}
+
+CI Warnings: {'; '.join(ci_context.warnings) if ci_context.warnings else 'None'}
+"""
+        else:
+            ci_section = """
+CI Context:
+No GitHub checks found for this PR. Continuing without CI context.
+"""
+    
     return f"""You are a local coding agent working on a follow-up for an existing pull request.
 
 Run ID: {run_id}
@@ -53,6 +77,7 @@ Base Branch: {task.base_branch}
 
 Follow-up command from @{task.comment_author}:
 {task.command_text}
+{ci_section}
 
 Planner output / implementation plan:
 {plan_text}
@@ -70,4 +95,8 @@ Implementation instructions:
 - Update README/docs when the task changes app behavior or usage.
 - Do not edit secrets, credentials, .env files, private keys, dependency folders, generated folders, or build outputs.
 - Do not merge anything. Only make code changes for the existing PR.
+{f'- Fix the root cause of the failing CI checks. Prefer minimal changes.' if task.is_ci_fix else ''}
+{f'- Update tests only if needed to fix the actual issue. Do not remove tests just to make CI pass.' if task.is_ci_fix else ''}
+{f'- Do not weaken assertions unless clearly correct.' if task.is_ci_fix else ''}
+{f"- Preserve the PR's existing intent." if task.is_ci_fix else ''}
 """

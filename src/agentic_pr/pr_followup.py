@@ -20,6 +20,8 @@ class FollowupTask:
     head_branch: str
     base_branch: str
     pr_url: str
+    is_ci_fix: bool = False
+    ci_command_alias: str | None = None
 
 
 def find_pending_followup(config: AgentConfig) -> FollowupTask | None:
@@ -56,6 +58,15 @@ def find_pending_followup(config: AgentConfig) -> FollowupTask | None:
             if not command_text:
                 continue
 
+            # Check if this is a CI-focused command
+            is_ci_fix = False
+            ci_command_alias = None
+            for alias in config.ci_command_aliases:
+                if body.strip().startswith(alias):
+                    is_ci_fix = True
+                    ci_command_alias = alias
+                    break
+
             return FollowupTask(
                 pr_number=pr["number"],
                 pr_title=pr["title"],
@@ -66,6 +77,8 @@ def find_pending_followup(config: AgentConfig) -> FollowupTask | None:
                 head_branch=details["headRefName"],
                 base_branch=details["baseRefName"],
                 pr_url=details.get("url", ""),
+                is_ci_fix=is_ci_fix,
+                ci_command_alias=ci_command_alias,
             )
 
     return None

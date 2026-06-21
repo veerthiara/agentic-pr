@@ -163,3 +163,38 @@ COMMENT_ON_START=maybe
 
             with self.assertRaisesRegex(ConfigError, "COMMENT_ON_START must be true or false"):
                 load_config(config_file)
+
+    def test_load_config_includes_ci_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = tmp_path / "repo"
+            repo.mkdir()
+            config_file = tmp_path / "agent.env"
+            config_file.write_text(
+                f"""
+REPO_PATH={repo}
+OWNER_REPO=octo/repo
+BASE_BRANCH=main
+MODEL=ollama/qwen3-coder:30b
+LABEL_TODO=agent-run
+LABEL_RUNNING=agent-running
+LABEL_DONE=agent-pr-created
+LABEL_FAILED=agent-failed
+OLLAMA_API_BASE=http://localhost:11434
+ENABLE_CI_CONTEXT=true
+CI_COMMAND_ALIASES=/agent fix-ci,/agent fix checks
+CI_LOG_MAX_LINES=250
+CI_LOG_MAX_BYTES=40000
+CI_INCLUDE_SUCCESSFUL_CHECKS=false
+CI_REQUIRE_FAILED_CHECKS=false
+"""
+            )
+
+            config = load_config(config_file)
+
+            self.assertTrue(config.enable_ci_context)
+            self.assertEqual(config.ci_command_aliases, ("/agent fix-ci", "/agent fix checks"))
+            self.assertEqual(config.ci_log_max_lines, 250)
+            self.assertEqual(config.ci_log_max_bytes, 40000)
+            self.assertFalse(config.ci_include_successful_checks)
+            self.assertFalse(config.ci_require_failed_checks)

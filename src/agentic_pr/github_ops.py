@@ -218,3 +218,50 @@ def add_label_to_pr_or_issue(config: AgentConfig, number: int, label: str) -> No
 
 def remove_label_from_pr_or_issue(config: AgentConfig, number: int, label: str) -> None:
     run(["gh", "issue", "edit", str(number), "--repo", config.owner_repo, "--remove-label", label], check=False)
+
+
+# Rev 09: CI-aware PR follow-up helpers
+def get_pr_checks(config: AgentConfig, pr_number: int) -> list[dict]:
+    """Get all check runs for a PR using gh CLI."""
+    result = run(
+        [
+            "gh",
+            "pr",
+            "checks",
+            str(pr_number),
+            "--repo",
+            config.owner_repo,
+            "--json",
+            "name,state,conclusion,detailsUrl,workflowRunId,checkRunId",
+        ],
+        check=False,
+    )
+    
+    if result.returncode != 0:
+        return []
+    
+    try:
+        return json.loads(result.stdout or "[]")
+    except json.JSONDecodeError:
+        return []
+
+
+def get_workflow_run_logs(config: AgentConfig, run_id: int) -> str:
+    """Get logs from a failed workflow run."""
+    result = run(
+        [
+            "gh",
+            "run",
+            "view",
+            str(run_id),
+            "--repo",
+            config.owner_repo,
+            "--log-failed",
+        ],
+        check=False,
+    )
+    
+    if result.returncode != 0:
+        return f"Failed to fetch logs for run {run_id}: {result.stderr}"
+    
+    return result.stdout or ""
