@@ -555,3 +555,96 @@ Fallback test when no CI exists:
 3. Expected:
    - It should not crash
    - It should comment that no failing checks/logs were found or that it is continuing with no CI context
+
+---
+
+## Rev 12: Multi-Repo Config Registry
+
+### Why Multi-Repo Configs?
+
+As you manage more repositories with the agent, you need a clean way to organize config files per repo without hard-coding engine or poller logic. Rev 12 introduces a `config/repos/` directory where each repo gets its own `.env` file.
+
+### New Config Layout
+
+```
+config/
+├── agent-test.env              # Legacy (still works)
+├── repos/
+│   ├── agent-test.env          # Primary config for agent-test repo
+│   └── another-repo.env        # Add more repos here
+└── repos.example/
+    └── repo.env.example        # Template with all options
+```
+
+### How to List Configs
+
+```sh
+make list-configs
+```
+
+Output:
+```
+agent-test | veerthiara/agent-test-local-ai | /Users/.../agent-test | main | enabled
+```
+
+### How to Validate All Configs
+
+```sh
+make doctor-all
+```
+
+Runs `doctor` checks for each enabled config in `config/repos/` and prints compact results.
+
+### How to Check Health of All Configs
+
+```sh
+make health-all
+```
+
+Runs health checks (GitHub, Ollama, Aider, launchd, lock file) for each enabled config.
+
+### How to Run One Repo by Config Path
+
+Both old and new paths work (backward compatible):
+
+```sh
+# Legacy path (still works)
+make doctor CONFIG=config/agent-test.env
+
+# New path
+make doctor CONFIG=config/repos/agent-test.env
+```
+
+### How to Add a New Repo
+
+1. Copy the example:
+   ```sh
+   cp config/repos.example/repo.env.example config/repos/my-new-repo.env
+   ```
+2. Edit `config/repos/my-new-repo.env` with your repo's values.
+3. Ensure each repo has **separate directories** for:
+   - `LOG_DIR`
+   - `RUN_DIR`
+   - `RUN_RECORD_DIR`
+   - `LOCK_FILE`
+   - `COMMENT_STATE_DIR`
+   
+   Or use shared folders with repo-safe filenames (e.g., `var/runs/my-repo/`).
+
+4. Test it:
+   ```sh
+   make doctor CONFIG=config/repos/my-new-repo.env
+   ```
+
+### Launchd Service Per Repo
+
+Rev 12 does **not** enable launchd services per repo by default. Each repo would need its own `SERVICE_LABEL` and separate `install-service` call. This is left for future revisions.
+
+### Config Path Helper
+
+Get the resolved config path for a repo name:
+
+```sh
+make config-path REPO=agent-test
+# Output: /Users/.../agentic-pr/config/repos/agent-test.env
+```

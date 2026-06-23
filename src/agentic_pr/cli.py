@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 
 from agentic_pr.config import ConfigError, load_config
+from agentic_pr.config_registry import discover_configs, get_config_by_name, list_config_summaries
 from agentic_pr.doctor import run_doctor
 from agentic_pr.github_ops import ensure_labels
 from agentic_pr.orchestrator import run_once, run_pr_followup_once
@@ -20,6 +22,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="agentic-pr")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    # Single-config commands (require --config)
     for name in ("doctor", "ensure-labels", "run-once", "run-followup-once", "poll", "list-runs", "show-last-run", "ci-summary", "health", "cleanup"):
         command_parser = subparsers.add_parser(name)
         command_parser.add_argument("--config", required=True)
@@ -31,9 +34,78 @@ def main(argv: list[str] | None = None) -> int:
             command_parser.add_argument("--dry-run", action="store_true")
             command_parser.add_argument("--apply", action="store_true")
 
+    # Multi-repo commands (no --config required)
+    list_configs_parser = subparsers.add_parser("list-configs")
+    list_configs_parser.add_argument("--include-disabled", action="store_true")
+
+    doctor_all_parser = subparsers.add_parser("doctor-all")
+    doctor_all_parser.add_argument("--include-disabled", action="store_true")
+
+    health_all_parser = subparsers.add_parser("health-all")
+    health_all_parser.add_argument("--include-disabled", action="store_true")
+
+    config_path_parser = subparsers.add_parser("config-path")
+    config_path_parser.add_argument("--repo", required=True)
+
     args = parser.parse_args(argv)
 
     try:
+        # Multi-repo commands
+        if args.command == "list-configs":
+            root = Path.cwd()
+            summaries = list_config_summaries(root, include_disabled=args.include_disabled)
+            if not summaries:
+                print("No configs found in config/repos/")
+                return 0
+            for s in summaries:
+                status = "enabled" if s["enabled"] else "disabled"
+                print(f"{s['name']} | {s['owner_repo']} | {s['repo_path']} | {s['base_branch']} | {status}")
+            return 0
+
+        elif args.command == "doctor-all":
+            root = Path.cwd()
+            configs = discover_configs(root, include_disabled=args.include_disabled)
+            if not configs:
+                print("No configs found in config/repos/")
+                return 0
+            for ref in configs:
+                print(f"\n=== {ref.name} ({ref.owner_repo}) ===")
+                try:
+                    config = load_config(ref.path)
+                    for message in run_doctor(config):
+                        print(f"  {message}")
+                except Exception as exc:
+                    print(f"  ERROR: {exc}")
+            return 0
+
+        elif args.command == "health-all":
+            root = Path.cwd()
+            configs = discover_configs(root, include_disabled=args.include_disabled)
+            if not configs:
+                print("No configs found in config/repos/")
+                return 0
+            for ref in configs:
+                print(f"\n=== {ref.name} ({ref.owner_repo}) ===")
+                try:
+                    config = load_config(ref.path)
+                    health = get_health_summary(config)
+                    print(f"  Overall: {health.overall_status}")
+                    for check in health.checks:
+                        print(f"  {check.name}: {check.status} - {check.message}")
+                except Exception as exc:
+                    print(f"  ERROR: {exc}")
+            return 0
+
+        elif args.command == "config-path":
+            root = Path.cwd()
+            ref = get_config_by_name(root, args.repo)
+            if ref is None:
+                print(f"Config not found: {args.repo}")
+                return 1
+            print(ref.path)
+            return 0
+
+        # Single-config commands (require --config)
         config = load_config(args.config)
         if args.command == "doctor":
             for message in run_doctor(config):

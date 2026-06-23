@@ -2,7 +2,7 @@ CONFIG ?= config/agent-test.env
 PYTHON ?= python3
 PYTHONPATH := src
 
-.PHONY: doctor ensure-labels run-once run-followup-once poll list-runs show-last-run ci-summary install-service start-service stop-service restart-service status-service uninstall-service tail-service-logs test health list-runs show-last-run show-run cleanup-dry-run cleanup
+.PHONY: doctor ensure-labels run-once run-followup-once poll list-runs show-last-run ci-summary install-service start-service stop-service restart-service status-service uninstall-service tail-service-logs test health list-runs show-last-run show-run cleanup-dry-run cleanup list-configs doctor-all health-all config-path
 
 doctor:
 	PYTHONPATH=$(PYTHONPATH) $(PYTHON) -m agentic_pr.cli doctor --config $(CONFIG)
@@ -66,3 +66,16 @@ tail-service-logs:
 
 test:
 	PYTHONPATH=$(PYTHONPATH) $(PYTHON) -m unittest discover -s tests
+
+# Rev 12: Multi-repo config registry
+list-configs:
+	PYTHONPATH=$(PYTHONPATH) $(PYTHON) -m agentic_pr.cli list-configs
+
+doctor-all:
+	PYTHONPATH=$(PYTHONPATH) $(PYTHON) -m agentic_pr.cli doctor-all
+
+health-all:
+	PYTHONPATH=$(PYTHONPATH) $(PYTHON) -m agentic_pr.cli health-all
+
+config-path:
+	PYTHONPATH=$(PYTHONPATH) $(PYTHON) -m agentic_pr.cli config-path --repo $(REPO)
