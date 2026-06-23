@@ -108,13 +108,12 @@ def _check_owner_repo(config: AgentConfig) -> HealthCheck:
 
 
 def _check_ollama(config: AgentConfig) -> HealthCheck:
-    """Check that Ollama API responds."""
+    """Check that Ollama API responds using the CLI."""
     try:
-        import requests
-        response = requests.get(f"{config.ollama_api_base}/tags", timeout=5)
-        if response.status_code != 200:
-            return HealthCheck("ollama", "fail", f"Ollama API error: {response.status_code}")
-        return HealthCheck("ollama", "ok", "Ollama API responsive")
+        result = run(["ollama", "list"], check=False, timeout=5)
+        if result.returncode != 0:
+            return HealthCheck("ollama", "fail", f"Ollama CLI error: {result.stderr or result.stdout}")
+        return HealthCheck("ollama", "ok", "Ollama responsive")
     except Exception as exc:
         return HealthCheck("ollama", "fail", f"Ollama check failed: {exc}")
 
@@ -140,7 +139,10 @@ def _check_launchd_service(config: AgentConfig) -> HealthCheck:
         if not config.service_label:
             return HealthCheck("launchd", "warn", "No service label configured")
             
-        result = run(["launchctl", "print", config.service_label], check=False)
+        # launchctl print requires the full domain path
+        uid = os.getuid()
+        domain = f"gui/{uid}/{config.service_label}"
+        result = run(["launchctl", "print", domain], check=False)
         if result.returncode != 0:
             return HealthCheck("launchd", "fail", f"Service not found: {config.service_label}")
         return HealthCheck("launchd", "ok", f"Service running: {config.service_label}")
