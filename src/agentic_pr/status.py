@@ -90,6 +90,7 @@ def pr_body(
         "Run metadata:\n"
         f"- Run ID: `{run_id}`\n"
         f"- Model: `{config.model}`\n"
+        f"- Engine: `{config.engine}`\n"
         f"- Base branch: `{config.base_branch}`\n"
         f"- Agent branch: `{branch}`\n"
         f"- Agent host: `{config.agent_host_label}`\n"

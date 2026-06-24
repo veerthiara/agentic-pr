@@ -88,6 +88,9 @@ class AgentConfig:
     comment_state_retention_days: int
     max_log_preview_lines: int
     service_label: str | None = None
+    # Rev 13: Coding engine abstraction
+    engine: str = "aider"
+    engine_timeout_seconds: int = 1800
     repo_instructions: "RepoInstructions | None" = None
 
 
@@ -153,73 +156,80 @@ def load_config(path: str | Path) -> AgentConfig:
     max_log_preview_lines = _positive_int(values.get("MAX_LOG_PREVIEW_LINES", "80"), "MAX_LOG_PREVIEW_LINES")
     service_label = values.get("SERVICE_LABEL")
 
+    # Rev 13: Coding engine abstraction
+    engine = values.get("ENGINE", "aider").lower()
+    engine_timeout_seconds = _positive_int(values.get("ENGINE_TIMEOUT_SECONDS", values.get("AIDER_TIMEOUT_SECONDS", "1800")), "ENGINE_TIMEOUT_SECONDS")
+
     return AgentConfig(
-        repo_path=repo_path,
-        owner_repo=values["OWNER_REPO"],
-        base_branch=values["BASE_BRANCH"],
-        model=values["MODEL"],
-        label_todo=values["LABEL_TODO"],
-        label_running=values["LABEL_RUNNING"],
-        label_done=values["LABEL_DONE"],
-        label_failed=values["LABEL_FAILED"],
-        label_no_changes=values.get("LABEL_NO_CHANGES", "agent-no-changes"),
-        label_blocked=values.get("LABEL_BLOCKED", "agent-blocked"),
-        ollama_api_base=values["OLLAMA_API_BASE"].rstrip("/"),
-        aider_extra_args=tuple(_split_args(values.get("AIDER_EXTRA_ARGS", ""))),
-        log_dir=_resolve_path(log_dir, repo_path),
-        run_dir=resolved_run_dir,
-        poll_interval_seconds=_positive_int(values.get("POLL_INTERVAL_SECONDS", "300"), "POLL_INTERVAL_SECONDS"),
-        lock_file=_resolve_path(lock_file, repo_path),
-        run_record_dir=_resolve_path(run_record_dir, repo_path),
-        agent_host_label=values.get("AGENT_HOST_LABEL", "Mac Studio"),
-        comment_on_start=_bool(values.get("COMMENT_ON_START", "true"), "COMMENT_ON_START"),
-        comment_on_success=_bool(values.get("COMMENT_ON_SUCCESS", "true"), "COMMENT_ON_SUCCESS"),
-        comment_on_failure=_bool(values.get("COMMENT_ON_FAILURE", "true"), "COMMENT_ON_FAILURE"),
-        comment_on_no_changes=_bool(values.get("COMMENT_ON_NO_CHANGES", "true"), "COMMENT_ON_NO_CHANGES"),
-        aider_timeout_seconds=_positive_int(values.get("AIDER_TIMEOUT_SECONDS", "1800"), "AIDER_TIMEOUT_SECONDS"),
-        max_changed_files=_positive_int(values.get("MAX_CHANGED_FILES", "20"), "MAX_CHANGED_FILES"),
-        max_diff_lines=_positive_int(values.get("MAX_DIFF_LINES", "800"), "MAX_DIFF_LINES"),
-        require_aiderignore=_bool(values.get("REQUIRE_AIDERIGNORE", "true"), "REQUIRE_AIDERIGNORE"),
-        blocked_path_patterns=tuple(_csv(values.get("BLOCKED_PATH_PATTERNS", ".env,.env.*,*.pem,*.key,*.p12,*.pfx,secrets/*,credentials/*,node_modules/*,.venv/*,dist/*,build/*,**pycache**/*"))),
-        test_cmd=test_cmd,
-        lint_cmd=lint_cmd,
-        stale_lock_seconds=_positive_int(values.get("STALE_LOCK_SECONDS", "7200"), "STALE_LOCK_SECONDS"),
-        enable_planner=_bool(values.get("ENABLE_PLANNER", "true"), "ENABLE_PLANNER"),
-        planner_model=values.get("PLANNER_MODEL", values["MODEL"]),
-        repo_context_max_files=_positive_int(values.get("REPO_CONTEXT_MAX_FILES", "80"), "REPO_CONTEXT_MAX_FILES"),
-        repo_context_max_bytes=_positive_int(values.get("REPO_CONTEXT_MAX_BYTES", "120000"), "REPO_CONTEXT_MAX_BYTES"),
-        planner_timeout_seconds=_positive_int(values.get("PLANNER_TIMEOUT_SECONDS", "900"), "PLANNER_TIMEOUT_SECONDS"),
-        comment_plan=_bool(values.get("COMMENT_PLAN", "true"), "COMMENT_PLAN"),
-        # Rev 08: PR follow-up
-        enable_pr_followups=_bool(values.get("ENABLE_PR_FOLLOWUPS", "true"), "ENABLE_PR_FOLLOWUPS"),
-        pr_followup_command_prefix=values.get("PR_FOLLOWUP_COMMAND_PREFIX", "/agent"),
-        pr_followup_require_label=_bool(values.get("PR_FOLLOWUP_REQUIRE_LABEL", "false"), "PR_FOLLOWUP_REQUIRE_LABEL"),
-        label_followup=values.get("LABEL_FOLLOWUP", "agent-followup"),
-        label_followup_running=values.get("LABEL_FOLLOWUP_RUNNING", "agent-followup-running"),
-        label_followup_done=values.get("LABEL_FOLLOWUP_DONE", "agent-followup-done"),
-        label_followup_failed=values.get("LABEL_FOLLOWUP_FAILED", "agent-followup-failed"),
-        comment_state_dir=_resolve_path(Path(values.get("COMMENT_STATE_DIR", repo_path / "var" / "comment-state")), repo_path),
-        max_followup_comments_per_cycle=_positive_int(values.get("MAX_FOLLOWUP_COMMENTS_PER_CYCLE", "1"), "MAX_FOLLOWUP_COMMENTS_PER_CYCLE"),
-        # Rev 09: CI-aware PR follow-up
-        enable_ci_context=_bool(values.get("ENABLE_CI_CONTEXT", "true"), "ENABLE_CI_CONTEXT"),
-        ci_command_aliases=tuple(_csv(values.get("CI_COMMAND_ALIASES", "/agent fix-ci,/agent fix checks,/agent fix failing tests"))),
-        ci_log_max_lines=_positive_int(values.get("CI_LOG_MAX_LINES", "250"), "CI_LOG_MAX_LINES"),
-        ci_log_max_bytes=_positive_int(values.get("CI_LOG_MAX_BYTES", "40000"), "CI_LOG_MAX_BYTES"),
-        ci_include_successful_checks=_bool(values.get("CI_INCLUDE_SUCCESSFUL_CHECKS", "false"), "CI_INCLUDE_SUCCESSFUL_CHECKS"),
-        ci_require_failed_checks=_bool(values.get("CI_REQUIRE_FAILED_CHECKS", "false"), "CI_REQUIRE_FAILED_CHECKS"),
-        # Rev 10: Repo instructions
-        enable_repo_instructions=enable_repo_instructions,
-        repo_instructions_dir=repo_instructions_dir,
-        repo_instructions_max_bytes=repo_instructions_max_bytes,
-        repo_instructions=repo_instructions if enable_repo_instructions else None,
-        # Rev 11: Maintenance and cleanup
-        run_retention_days=run_retention_days,
-        log_retention_days=log_retention_days,
-        prompt_retention_days=prompt_retention_days,
-        comment_state_retention_days=comment_state_retention_days,
-        max_log_preview_lines=max_log_preview_lines,
-        service_label=service_label,
-    )
+            repo_path=repo_path,
+            owner_repo=values["OWNER_REPO"],
+            base_branch=values["BASE_BRANCH"],
+            model=values["MODEL"],
+            label_todo=values["LABEL_TODO"],
+            label_running=values["LABEL_RUNNING"],
+            label_done=values["LABEL_DONE"],
+            label_failed=values["LABEL_FAILED"],
+            label_no_changes=values.get("LABEL_NO_CHANGES", "agent-no-changes"),
+            label_blocked=values.get("LABEL_BLOCKED", "agent-blocked"),
+            ollama_api_base=values["OLLAMA_API_BASE"].rstrip("/"),
+            aider_extra_args=tuple(_split_args(values.get("AIDER_EXTRA_ARGS", ""))),
+            log_dir=_resolve_path(log_dir, repo_path),
+            run_dir=resolved_run_dir,
+            poll_interval_seconds=_positive_int(values.get("POLL_INTERVAL_SECONDS", "300"), "POLL_INTERVAL_SECONDS"),
+            lock_file=_resolve_path(lock_file, repo_path),
+            run_record_dir=_resolve_path(run_record_dir, repo_path),
+            agent_host_label=values.get("AGENT_HOST_LABEL", "Mac Studio"),
+            comment_on_start=_bool(values.get("COMMENT_ON_START", "true"), "COMMENT_ON_START"),
+            comment_on_success=_bool(values.get("COMMENT_ON_SUCCESS", "true"), "COMMENT_ON_SUCCESS"),
+            comment_on_failure=_bool(values.get("COMMENT_ON_FAILURE", "true"), "COMMENT_ON_FAILURE"),
+            comment_on_no_changes=_bool(values.get("COMMENT_ON_NO_CHANGES", "true"), "COMMENT_ON_NO_CHANGES"),
+            aider_timeout_seconds=_positive_int(values.get("AIDER_TIMEOUT_SECONDS", "1800"), "AIDER_TIMEOUT_SECONDS"),
+            max_changed_files=_positive_int(values.get("MAX_CHANGED_FILES", "20"), "MAX_CHANGED_FILES"),
+            max_diff_lines=_positive_int(values.get("MAX_DIFF_LINES", "800"), "MAX_DIFF_LINES"),
+            require_aiderignore=_bool(values.get("REQUIRE_AIDERIGNORE", "true"), "REQUIRE_AIDERIGNORE"),
+            blocked_path_patterns=tuple(_csv(values.get("BLOCKED_PATH_PATTERNS", ".env,.env.*,*.pem,*.key,*.p12,*.pfx,secrets/*,credentials/*,node_modules/*,.venv/*,dist/*,build/*,**pycache**/*"))),
+            test_cmd=test_cmd,
+            lint_cmd=lint_cmd,
+            stale_lock_seconds=_positive_int(values.get("STALE_LOCK_SECONDS", "7200"), "STALE_LOCK_SECONDS"),
+            enable_planner=_bool(values.get("ENABLE_PLANNER", "true"), "ENABLE_PLANNER"),
+            planner_model=values.get("PLANNER_MODEL", values["MODEL"]),
+            repo_context_max_files=_positive_int(values.get("REPO_CONTEXT_MAX_FILES", "80"), "REPO_CONTEXT_MAX_FILES"),
+            repo_context_max_bytes=_positive_int(values.get("REPO_CONTEXT_MAX_BYTES", "120000"), "REPO_CONTEXT_MAX_BYTES"),
+            planner_timeout_seconds=_positive_int(values.get("PLANNER_TIMEOUT_SECONDS", "900"), "PLANNER_TIMEOUT_SECONDS"),
+            comment_plan=_bool(values.get("COMMENT_PLAN", "true"), "COMMENT_PLAN"),
+            # Rev 08: PR follow-up
+            enable_pr_followups=_bool(values.get("ENABLE_PR_FOLLOWUPS", "true"), "ENABLE_PR_FOLLOWUPS"),
+            pr_followup_command_prefix=values.get("PR_FOLLOWUP_COMMAND_PREFIX", "/agent"),
+            pr_followup_require_label=_bool(values.get("PR_FOLLOWUP_REQUIRE_LABEL", "false"), "PR_FOLLOWUP_REQUIRE_LABEL"),
+            label_followup=values.get("LABEL_FOLLOWUP", "agent-followup"),
+            label_followup_running=values.get("LABEL_FOLLOWUP_RUNNING", "agent-followup-running"),
+            label_followup_done=values.get("LABEL_FOLLOWUP_DONE", "agent-followup-done"),
+            label_followup_failed=values.get("LABEL_FOLLOWUP_FAILED", "agent-followup-failed"),
+            comment_state_dir=_resolve_path(Path(values.get("COMMENT_STATE_DIR", repo_path / "var" / "comment-state")), repo_path),
+            max_followup_comments_per_cycle=_positive_int(values.get("MAX_FOLLOWUP_COMMENTS_PER_CYCLE", "1"), "MAX_FOLLOWUP_COMMENTS_PER_CYCLE"),
+            # Rev 09: CI-aware PR follow-up
+            enable_ci_context=_bool(values.get("ENABLE_CI_CONTEXT", "true"), "ENABLE_CI_CONTEXT"),
+            ci_command_aliases=tuple(_csv(values.get("CI_COMMAND_ALIASES", "/agent fix-ci,/agent fix checks,/agent fix failing tests"))),
+            ci_log_max_lines=_positive_int(values.get("CI_LOG_MAX_LINES", "250"), "CI_LOG_MAX_LINES"),
+            ci_log_max_bytes=_positive_int(values.get("CI_LOG_MAX_BYTES", "40000"), "CI_LOG_MAX_BYTES"),
+            ci_include_successful_checks=_bool(values.get("CI_INCLUDE_SUCCESSFUL_CHECKS", "false"), "CI_INCLUDE_SUCCESSFUL_CHECKS"),
+            ci_require_failed_checks=_bool(values.get("CI_REQUIRE_FAILED_CHECKS", "false"), "CI_REQUIRE_FAILED_CHECKS"),
+            # Rev 10: Repo instructions
+            enable_repo_instructions=enable_repo_instructions,
+            repo_instructions_dir=repo_instructions_dir,
+            repo_instructions_max_bytes=repo_instructions_max_bytes,
+            repo_instructions=repo_instructions if enable_repo_instructions else None,
+            # Rev 11: Maintenance and cleanup
+            run_retention_days=run_retention_days,
+            log_retention_days=log_retention_days,
+            prompt_retention_days=prompt_retention_days,
+            comment_state_retention_days=comment_state_retention_days,
+            max_log_preview_lines=max_log_preview_lines,
+            service_label=service_label,
+            # Rev 13: Coding engine abstraction
+            engine=engine,
+            engine_timeout_seconds=engine_timeout_seconds,
+        )
 
 
 def _unquote(value: str) -> str:

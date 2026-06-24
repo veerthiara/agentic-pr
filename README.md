@@ -648,3 +648,51 @@ Get the resolved config path for a repo name:
 make config-path REPO=agent-test
 # Output: /Users/.../agentic-pr/config/repos/agent-test.env
 ```
+
+---
+
+## Rev 13: Coding Engine Abstraction
+
+### Why Engine Abstraction?
+
+The agent now uses a clean `CodingEngine` interface so future engines (e.g. OpenHands) can be swapped in without rewriting the orchestrator, safety checks, planner, or GitHub logic.
+
+### Current Supported Engine
+
+| Engine | Status |
+|--------|--------|
+| `aider` | ✅ Implemented |
+| `openhands` | 🔜 Future revision |
+
+### Config Key
+
+```env
+ENGINE=aider
+ENGINE_TIMEOUT_SECONDS=1800
+```
+
+If `ENGINE_TIMEOUT_SECONDS` is not set, it falls back to `AIDER_TIMEOUT_SECONDS` (default 1800).
+
+### How to Verify Engine Status
+
+```sh
+# Doctor shows engine availability
+make doctor CONFIG=config/agent-test.env
+# Output includes: ok: engine aider available
+
+# Health shows engine status
+make health CONFIG=config/agent-test.env
+# Output includes: engine_aider: ok - aider available
+```
+
+### Architecture
+
+```
+get_engine(config)  →  AiderEngine  →  run(EngineRequest)  →  EngineResult
+                          ↓
+                     engine.doctor(config)  →  EngineDoctorResult
+```
+
+- `EngineRequest`: run_id, repo_path, prompt_file, prompt_text, model, log_file, timeout, mode
+- `EngineResult`: engine_name, ok, exit_code, timed_out, log_file, error_summary
+- New engines implement `CodingEngine` from `src/agentic_pr/engines/base.py`

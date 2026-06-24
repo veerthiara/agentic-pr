@@ -10,6 +10,7 @@ from typing import List, Optional
 
 from agentic_pr.command import CommandResult, run
 from agentic_pr.config import AgentConfig
+from agentic_pr.engine import get_engine
 from agentic_pr.lock import FileLock
 
 logger = logging.getLogger(__name__)
@@ -165,6 +166,16 @@ def _check_lock_file(config: AgentConfig) -> HealthCheck:
         return HealthCheck("lock_file", "fail", f"Lock check failed: {exc}")
 
 
+def _check_engine(config: AgentConfig) -> HealthCheck:
+    """Check engine availability."""
+    try:
+        engine = get_engine(config)
+        result = engine.doctor(config)
+        return HealthCheck(f"engine_{result.name}", result.status, result.message)
+    except Exception as exc:
+        return HealthCheck("engine", "fail", f"Engine check failed: {exc}")
+
+
 def get_health_summary(config: AgentConfig) -> HealthSummary:
     """Get a comprehensive health summary."""
     checks = [
@@ -179,6 +190,7 @@ def get_health_summary(config: AgentConfig) -> HealthSummary:
         _check_aider_exists(),
         _check_launchd_service(config),
         _check_lock_file(config),
+        _check_engine(config),
     ]
     
     # Determine overall status

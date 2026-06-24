@@ -152,3 +152,33 @@ class RunRecordTests(unittest.TestCase):
             self.assertEqual(data["repo_instruction_files"], ["instructions.md", "safety.md"])
             self.assertEqual(data["repo_test_cmd_source"], "commands.env")
             self.assertEqual(data["repo_lint_cmd_source"], "main config")
+
+    def test_run_record_includes_engine_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            record = RunRecord(
+                run_id="run-789",
+                issue_number=8,
+                issue_title="Add multiply function",
+                owner_repo="octo/repo",
+                model="ollama/qwen3-coder:30b",
+                base_branch="main",
+                agent_branch="agent/issue-8-789",
+                status="failed",
+                pr_url=None,
+                started_at="2024-01-01T10:00:00",
+                finished_at="2024-01-01T10:05:00",
+                log_file="/tmp/run.log",
+                error_summary="Engine timed out",
+                engine="aider",
+                engine_exit_code=124,
+                engine_timed_out=True,
+                engine_error_summary="Engine timed out after 1800 seconds",
+            )
+
+            path = write_run_record(Path(tmp), record)
+            data = json.loads(path.read_text())
+
+            self.assertEqual(data["engine"], "aider")
+            self.assertEqual(data["engine_exit_code"], 124)
+            self.assertTrue(data["engine_timed_out"])
+            self.assertEqual(data["engine_error_summary"], "Engine timed out after 1800 seconds")

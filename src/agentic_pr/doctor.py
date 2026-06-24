@@ -6,6 +6,7 @@ import urllib.request
 
 from agentic_pr.command import run
 from agentic_pr.config import AgentConfig
+from agentic_pr.engine import get_engine
 from agentic_pr.git_ops import ensure_clean_worktree, ensure_git_repo
 from agentic_pr.github_ops import ensure_repo_access
 
@@ -37,6 +38,12 @@ def run_doctor(config: AgentConfig, *, strict_clean: bool = True) -> list[str]:
 
     _check_ollama(config.ollama_api_base)
     messages.append(f"ok: Ollama API reachable: {config.ollama_api_base}")
+
+    # Check engine
+    engine = get_engine(config)
+    if not shutil.which(engine.name):
+        raise RuntimeError(f"Engine command not found: {engine.name}")
+    messages.append(f"ok: engine {engine.name} available")
 
     return messages
 

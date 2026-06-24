@@ -48,6 +48,11 @@ class RunRecord:
     repo_instruction_files: list[str] | None = None
     repo_test_cmd_source: str | None = None
     repo_lint_cmd_source: str | None = None
+    # Rev 13: Engine fields
+    engine: str = "aider"
+    engine_exit_code: int | None = None
+    engine_timed_out: bool = False
+    engine_error_summary: str | None = None
 
 
 def write_run_record(directory: Path, record: RunRecord) -> Path:
