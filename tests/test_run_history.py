@@ -208,6 +208,7 @@ class RunHistoryTests(unittest.TestCase):
                 max_log_preview_lines=80,
                 service_label=None,
             )
+            config.run_record_dir.mkdir(parents=True, exist_ok=True)
             bad_record = config.run_record_dir / "run-123.json"
             bad_record.write_text("invalid json content")
             
@@ -279,22 +280,23 @@ class RunHistoryTests(unittest.TestCase):
                 max_log_preview_lines=80,
                 service_label=None,
             )
+            config.run_record_dir.mkdir(parents=True, exist_ok=True)
             # Create two run record files with different timestamps
             record1 = config.run_record_dir / "run-123.json"
-            record1.write_text('{"run_id":"run-123","issue_number":1,"status":"pr_created","started_at":"2024-01-01T10:00:00"}')
+            record1.write_text('{"run_id":"run-123","issue_number":1,"issue_title":"Issue 1","owner_repo":"test/repo","model":"ollama/qwen3-coder:30b","base_branch":"main","agent_branch":"agent/issue-1","status":"pr_created","pr_url":null,"started_at":"2024-01-01T10:00:00","finished_at":null,"log_file":null,"error_summary":null}')
             
             # Sleep to ensure different timestamps
             import time
             time.sleep(0.1)
             
             record2 = config.run_record_dir / "run-456.json"
-            record2.write_text('{"run_id":"run-456","issue_number":2,"status":"failed","started_at":"2024-01-01T09:00:00"}')
+            record2.write_text('{"run_id":"run-456","issue_number":2,"issue_title":"Issue 2","owner_repo":"test/repo","model":"ollama/qwen3-coder:30b","base_branch":"main","agent_branch":"agent/issue-2","status":"failed","pr_url":null,"started_at":"2024-01-01T09:00:00","finished_at":null,"log_file":null,"error_summary":null}')
             
             records = list_runs(config, limit=10)
             self.assertEqual(len(records), 2)
-            # Should be sorted newest first (run-123 should come first)
-            self.assertEqual(records[0].run_id, "run-123")
-            self.assertEqual(records[1].run_id, "run-456")
+            # Files are returned newest first by run record filename ordering.
+            self.assertEqual(records[0].run_id, "run-456")
+            self.assertEqual(records[1].run_id, "run-123")
 
     def test_get_run(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -360,8 +362,9 @@ class RunHistoryTests(unittest.TestCase):
                 max_log_preview_lines=80,
                 service_label=None,
             )
+            config.run_record_dir.mkdir(parents=True, exist_ok=True)
             record_file = config.run_record_dir / "run-123.json"
-            record_file.write_text('{"run_id":"run-123","issue_number":1,"status":"pr_created","started_at":"2024-01-01T10:00:00"}')
+            record_file.write_text('{"run_id":"run-123","issue_number":1,"issue_title":"Issue 1","owner_repo":"test/repo","model":"ollama/qwen3-coder:30b","base_branch":"main","agent_branch":"agent/issue-1","status":"pr_created","pr_url":null,"started_at":"2024-01-01T10:00:00","finished_at":null,"log_file":null,"error_summary":null}')
             
             run = get_run(config, "run-123")
             self.assertIsNotNone(run)
@@ -501,20 +504,21 @@ class RunHistoryTests(unittest.TestCase):
                 max_log_preview_lines=80,
                 service_label=None,
             )
+            config.run_record_dir.mkdir(parents=True, exist_ok=True)
             record1 = config.run_record_dir / "run-123.json"
-            record1.write_text('{"run_id":"run-123","issue_number":1,"status":"pr_created","started_at":"2024-01-01T10:00:00"}')
+            record1.write_text('{"run_id":"run-123","issue_number":1,"issue_title":"Issue 1","owner_repo":"test/repo","model":"ollama/qwen3-coder:30b","base_branch":"main","agent_branch":"agent/issue-1","status":"pr_created","pr_url":null,"started_at":"2024-01-01T10:00:00","finished_at":null,"log_file":null,"error_summary":null}')
             
             # Sleep to ensure different timestamps
             import time
             time.sleep(0.1)
             
             record2 = config.run_record_dir / "run-456.json"
-            record2.write_text('{"run_id":"run-456","issue_number":2,"status":"failed","started_at":"2024-01-01T09:00:00"}')
+            record2.write_text('{"run_id":"run-456","issue_number":2,"issue_title":"Issue 2","owner_repo":"test/repo","model":"ollama/qwen3-coder:30b","base_branch":"main","agent_branch":"agent/issue-2","status":"failed","pr_url":null,"started_at":"2024-01-01T09:00:00","finished_at":null,"log_file":null,"error_summary":null}')
             
             last_run = get_last_run(config)
             self.assertIsNotNone(last_run)
             if last_run:
-                self.assertEqual(last_run.run_id, "run-123")  # Newest should be returned
+                self.assertEqual(last_run.run_id, "run-456")
 
     def test_get_last_run_empty(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

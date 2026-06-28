@@ -662,7 +662,7 @@ The agent now uses a clean `CodingEngine` interface so future engines (e.g. Open
 | Engine | Status |
 |--------|--------|
 | `aider` | ✅ Implemented |
-| `openhands` | 🔜 Future revision |
+| `openhands` | ⚠️ Experimental |
 
 ### Config Key
 
@@ -696,3 +696,210 @@ get_engine(config)  →  AiderEngine  →  run(EngineRequest)  →  EngineResult
 - `EngineRequest`: run_id, repo_path, prompt_file, prompt_text, model, log_file, timeout, mode
 - `EngineResult`: engine_name, ok, exit_code, timed_out, log_file, error_summary
 - New engines implement `CodingEngine` from `src/agentic_pr/engines/base.py`
+
+---
+
+## Rev 14: Experimental OpenHands Engine
+
+OpenHands is now available as an optional experimental engine behind the Rev 13 engine abstraction. Aider is still the default and still the recommended path for normal service use.
+
+### OpenHands Config
+
+Keep your stable repo config on Aider:
+
+```env
+ENGINE=aider
+```
+
+Use the experimental config when you want to try OpenHands:
+
+```sh
+config/repos/agent-test-openhands.env
+```
+
+Key settings:
+
+```env
+ENGINE=openhands
+ENGINE_TIMEOUT_SECONDS=3600
+OPENHANDS_COMMAND=/Users/vsinghthiara/Developer/Learning/agentic-pr/infra/openhands/run-openhands.sh
+OPENHANDS_TIMEOUT_SECONDS=3600
+OPENHANDS_EXTRA_ARGS=
+OPENHANDS_USE_JSON_OUTPUT=false
+OPENHANDS_EXPERIMENTAL=true
+OPENHANDS_LLM_BASE_URL=http://host.docker.internal:11434/v1
+OPENHANDS_API_KEY=local-llm
+OPENHANDS_DOCKER_IMAGE=agentic-pr/openhands-cli:local
+```
+
+### Containerized OpenHands
+
+The repo now includes a local Docker-based OpenHands CLI path under:
+
+```sh
+infra/openhands/
+```
+
+Files there:
+
+- `Dockerfile` builds a local CLI image with `openhands`
+- `run-openhands.sh` runs the CLI image against the host Docker socket and your repo workspace
+- `docker-compose.yml` gives you a compose-based entrypoint for manual experimentation
+- `.env.example` shows the expected environment values
+
+This keeps OpenHands out of your global Python environment. The wrapper builds the local image on first use if it does not already exist.
+
+### Run OpenHands Locally
+
+If you want to run OpenHands directly, outside the GitHub issue loop, use this order.
+
+1. Start the local container runtime:
+
+```sh
+colima start
+docker ps
+```
+
+Expected:
+- `colima start` finishes without error
+- `docker ps` prints an empty table or running containers
+
+2. Verify Ollama is up and your model exists:
+
+```sh
+ollama list
+```
+
+Expected:
+- you can see `qwen3-coder:30b`
+
+3. Smoke-test the local OpenHands wrapper:
+
+```sh
+infra/openhands/run-openhands.sh --version
+```
+
+Expected:
+- the wrapper builds the local image on first run if needed
+- you see an OpenHands CLI version line
+
+4. Run a direct headless OpenHands task against your local test repo:
+
+```sh
+LLM_MODEL='openai/qwen3-coder:30b' \
+LLM_BASE_URL='http://host.docker.internal:11434/v1' \
+LLM_API_KEY='local-llm' \
+OPENHANDS_REPO_PATH='/Users/vsinghthiara/Developer/Learning/agent-test' \
+infra/openhands/run-openhands.sh \
+  --headless \
+  --override-with-envs \
+  --task 'Reply with the single word done and make no file changes.'
+```
+
+Expected:
+- OpenHands initializes the agent
+- it prints progress
+- it finishes with a short result
+
+5. Run a real local coding task:
+
+```sh
+LLM_MODEL='openai/qwen3-coder:30b' \
+LLM_BASE_URL='http://host.docker.internal:11434/v1' \
+LLM_API_KEY='local-llm' \
+OPENHANDS_REPO_PATH='/Users/vsinghthiara/Developer/Learning/agent-test' \
+infra/openhands/run-openhands.sh \
+  --headless \
+  --override-with-envs \
+  --task 'Add a max_value(a, b) helper to calc.py and add tests. Keep the change minimal.'
+```
+
+6. Inspect what changed in the local repo:
+
+```sh
+git -C /Users/vsinghthiara/Developer/Learning/agent-test status --short
+git -C /Users/vsinghthiara/Developer/Learning/agent-test diff --stat
+```
+
+Use this direct path first when you want to debug OpenHands itself before involving GitHub issues, branching, PR creation, or the poller.
+
+### How To Verify It
+
+Stable Aider regression:
+
+```sh
+make test
+make doctor CONFIG=config/repos/agent-test.env
+make health CONFIG=config/repos/agent-test.env
+```
+
+Experimental OpenHands checks:
+
+```sh
+make doctor CONFIG=config/repos/agent-test-openhands.env
+make health CONFIG=config/repos/agent-test-openhands.env
+```
+
+Expected:
+
+- `doctor` reports the configured OpenHands wrapper as available
+- `health` shows:
+  - `Engine: openhands`
+  - `Engine status: ok`
+  - `Experimental: true`
+
+If the container runtime is not available yet, doctor fails clearly and health shows:
+
+- `Engine: openhands`
+- `Engine status: fail`
+- `Experimental: true`
+
+### Manual OpenHands Issue Test
+
+Do this only after `make doctor CONFIG=config/repos/agent-test-openhands.env` passes:
+
+1. Make sure the background Aider poller is not running if you want a clean manual OpenHands test.
+2. Create a GitHub issue with label `agent-run`
+3. Run:
+
+```sh
+make run-once CONFIG=config/repos/agent-test-openhands.env
+```
+
+4. Check the issue comments in GitHub.
+5. Check the local run log and run record:
+
+```sh
+ls -lt logs | head
+ls -lt var/runs | head
+```
+
+6. If successful, inspect the created PR in GitHub.
+
+Suggested test issue:
+
+Title:
+`Agent test OpenHands: add mode function`
+
+Body:
+`Edit calc.py to add a mode(values) function that returns the most common value. Keep it simple. Follow repo instructions and add tests if tests exist.`
+
+What you should expect from a successful issue run:
+
+- issue gets a start comment
+- planner comment appears
+- implementation comment appears
+- a PR-created comment appears
+- `var/runs/run-*.json` contains the engine metadata
+- `logs/run-*.log` contains the OpenHands session output
+
+### Switching Back To Aider
+
+Go back to the stable config at any time:
+
+```sh
+make run-once CONFIG=config/repos/agent-test.env
+make poll CONFIG=config/repos/agent-test.env
+```
+
+Do not install the OpenHands launchd service flow until manual OpenHands runs are working on your machine. OpenHands may need its own installation or local settings before the experimental config can pass doctor.

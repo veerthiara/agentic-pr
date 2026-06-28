@@ -5,6 +5,7 @@ from agentic_pr.config import AgentConfig
 from agentic_pr.github_ops import Issue
 from agentic_pr.status import (
     before_aider_comment,
+    before_engine_comment,
     failed_comment,
     generate_run_id,
     no_changes_comment,
@@ -32,6 +33,7 @@ from agentic_pr.status import (
     ci_fix_pushed_comment,
     ci_fix_failed_comment,
     ci_logs_unavailable_comment,
+    engine_timeout_comment,
 )
 
 
@@ -49,18 +51,21 @@ class StatusTests(unittest.TestCase):
     def test_issue_comment_text_generation(self) -> None:
         config = _config()
         self.assertIn("Local Mac Studio agent started", start_comment(config, "run-1"))
+        self.assertIn("Engine: `aider`", start_comment(config, "run-1"))
         self.assertIn("Running Aider", before_aider_comment(config, "run-1"))
+        self.assertIn("Engine: `aider`", before_engine_comment(config, "run-1"))
         self.assertIn("https://example.test/pr/1", pr_created_comment("run-1", "https://example.test/pr/1", "agent/branch"))
         self.assertIn("no file changes", no_changes_comment("run-1"))
         self.assertIn("Stage: `run_aider`", failed_comment("run-1", "run_aider", "boom"))
         self.assertIn("run-1", blocked_comment("run-1", "blocked_path", ["Blocked path: .env"]))
         self.assertIn("missing_aiderignore", preflight_blocked_comment("run-1", "missing_aiderignore", ["missing"]))
         self.assertIn("1800", aider_timeout_comment("run-1", 1800))
+        self.assertIn("Engine: `aider`", engine_timeout_comment(config, "run-1", 1800))
         self.assertIn("lint", validation_failed_comment("run-1", "lint", "failed"))
         self.assertIn("run-1", planner_started_comment("run-1"))
         self.assertIn("summary", planner_completed_comment("run-1", "summary"))
         self.assertIn("continue", planner_failed_comment("run-1", "timeout"))
-        self.assertIn("run-1", implementation_started_comment("run-1"))
+        self.assertIn("Engine: `aider`", implementation_started_comment(config, "run-1"))
         self.assertIn("run-1", followup_accepted_comment("run-1", "fix tests", "user1"))
         self.assertIn("fix tests", followup_accepted_comment("run-1", "fix tests", "user1"))
         self.assertIn("user1", followup_accepted_comment("run-1", "fix tests", "user1"))
@@ -85,12 +90,13 @@ class StatusTests(unittest.TestCase):
             run_id="run-20260619-150405-issue-7",
             branch="agent/issue-7-20260619150405",
             log_file="/tmp/run.log",
-            aider_exit_code=0,
+            engine_exit_code=0,
         )
 
         self.assertIn("Closes #7", body)
         self.assertIn("run-20260619-150405-issue-7", body)
         self.assertIn("ollama/qwen3-coder:30b", body)
+        self.assertIn("Engine: `aider`", body)
         self.assertIn("Agent host: `Mac Studio`", body)
         self.assertIn("not auto-merged", body)
         self.assertIn("/tmp/run.log", body)
@@ -155,4 +161,17 @@ def _config() -> AgentConfig:
         enable_repo_instructions=True,
         repo_instructions_dir=".agentic-pr",
         repo_instructions_max_bytes=40000,
+        run_retention_days=30,
+        log_retention_days=30,
+        prompt_retention_days=30,
+        comment_state_retention_days=90,
+        max_log_preview_lines=80,
+        service_label=None,
+        engine="aider",
+        engine_timeout_seconds=1800,
+        openhands_command="openhands",
+        openhands_timeout_seconds=3600,
+        openhands_extra_args=(),
+        openhands_use_json_output=False,
+        openhands_experimental=False,
     )

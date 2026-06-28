@@ -4,3 +4,5 @@ var/run/*
 !var/run/.gitkeep
 var/runs/*
 !var/runs/.gitkeep
+.aider*
+.env

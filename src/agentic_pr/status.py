@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime
+import re
 
 from agentic_pr.config import AgentConfig
+
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 
 
 def generate_run_id(issue_number: int, now: datetime | None = None) -> str:
@@ -33,17 +37,23 @@ def start_comment(config: AgentConfig, run_id: str) -> str:
     return (
         "Local Mac Studio agent started.\n\n"
         f"Run ID: `{run_id}`\n"
+        f"Engine: `{config.engine}`\n"
         f"Model: `{config.model}`\n"
         f"Base branch: `{config.base_branch}`"
     )
 
 
-def before_aider_comment(config: AgentConfig, run_id: str) -> str:
+def before_engine_comment(config: AgentConfig, run_id: str) -> str:
     return (
-        "Running Aider with local Ollama model.\n\n"
+        f"Running {display_engine_name(config.engine)} with local model.\n\n"
         f"Run ID: `{run_id}`\n"
+        f"Engine: `{config.engine}`\n"
         f"Model: `{config.model}`"
     )
+
+
+def before_aider_comment(config: AgentConfig, run_id: str) -> str:
+    return before_engine_comment(config, run_id)
 
 
 def pr_created_comment(run_id: str, pr_url: str, branch: str) -> str:
@@ -80,7 +90,7 @@ def pr_body(
     run_id: str,
     branch: str,
     log_file: str,
-    aider_exit_code: int,
+    engine_exit_code: int,
     planner_enabled: bool = False,
     plan_summary: str | None = None,
 ) -> str:
@@ -94,7 +104,7 @@ def pr_body(
         f"- Base branch: `{config.base_branch}`\n"
         f"- Agent branch: `{branch}`\n"
         f"- Agent host: `{config.agent_host_label}`\n"
-        f"- Aider exit code: `{aider_exit_code}`\n"
+        f"- Engine exit code: `{engine_exit_code}`\n"
         f"- Planner enabled: `{planner_enabled}`\n"
         f"- Plan summary: {plan_summary or 'Not available'}\n\n"
         "Validation reminder:\n"
@@ -108,6 +118,7 @@ def pr_body(
 
 def short_error(exc: BaseException, max_length: int = 500) -> str:
     text = str(exc).strip() or exc.__class__.__name__
+    text = _ANSI_RE.sub("", text)
     text = " ".join(text.split())
     if len(text) <= max_length:
         return text
@@ -131,6 +142,15 @@ def preflight_blocked_comment(run_id: str, reason: str, details: list[str]) -> s
         f"Run ID: `{run_id}`\n"
         f"Reason: `{reason}`\n"
         f"Details: {detail_text}"
+    )
+
+
+def engine_timeout_comment(config: AgentConfig, run_id: str, timeout_seconds: int) -> str:
+    return (
+        f"Local agent failed because {display_engine_name(config.engine)} timed out.\n\n"
+        f"Run ID: `{run_id}`\n"
+        f"Engine: `{config.engine}`\n"
+        f"Timeout: `{timeout_seconds}` seconds"
     )
 
 
@@ -168,12 +188,16 @@ def planner_failed_comment(run_id: str, error: str | None) -> str:
     return (
         "Planner failed, but implementation will continue with the raw issue prompt.\n\n"
         f"Run ID: `{run_id}`\n"
-        f"Reason: {error or 'unknown'}"
+        f"Reason: {_clean_text(error or 'unknown')}"
     )
 
 
-def implementation_started_comment(run_id: str) -> str:
-    return f"Starting implementation with the final Aider prompt.\n\nRun ID: `{run_id}`"
+def implementation_started_comment(config: AgentConfig, run_id: str) -> str:
+    return (
+        "Starting implementation with the final engine prompt.\n\n"
+        f"Run ID: `{run_id}`\n"
+        f"Engine: `{config.engine}`"
+    )
 
 
 # Rev 08: PR follow-up comment templates
@@ -257,6 +281,16 @@ def ci_context_no_checks_comment(run_id: str) -> str:
         f"Run ID: `{run_id}`\n"
         "Continuing without CI context."
     )
+
+
+def display_engine_name(engine_name: str) -> str:
+    if engine_name == "openhands":
+        return "OpenHands"
+    return engine_name.capitalize()
+
+
+def _clean_text(text: str) -> str:
+    return " ".join(_ANSI_RE.sub("", text).split())
 
 
 def ci_fix_pushed_comment(run_id: str, command_text: str, commit_sha: str, pr_url: str) -> str:

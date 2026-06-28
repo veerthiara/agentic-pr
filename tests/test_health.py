@@ -7,6 +7,7 @@ from typing import Optional
 
 from agentic_pr.health import get_health_summary
 from agentic_pr.config import AgentConfig
+from agentic_pr.engines.base import EngineDoctorResult
 
 
 def _make_config(repo_path: Optional[Path] = None, **overrides):
@@ -125,6 +126,28 @@ class HealthTests(unittest.TestCase):
         ollama = next((c for c in check.checks if c.name == "ollama"), None)
         self.assertIsNotNone(ollama)
         self.assertEqual(ollama.status, "fail")
+
+    @patch("agentic_pr.health.get_engine")
+    @patch("agentic_pr.health.run")
+    def test_health_reports_openhands_engine_warning(self, mock_run, mock_get_engine) -> None:
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        mock_engine = MagicMock()
+        mock_engine.doctor.return_value = EngineDoctorResult(
+            name="openhands",
+            status="fail",
+            message="OpenHands command not found: openhands",
+        )
+        mock_get_engine.return_value = mock_engine
+
+        config = _make_config(engine="openhands", openhands_experimental=True)
+        check = get_health_summary(config)
+
+        engine_check = next((c for c in check.checks if c.name == "engine_openhands"), None)
+        self.assertIsNotNone(engine_check)
+        self.assertEqual(engine_check.status, "fail")
+        self.assertEqual(check.engine_name, "openhands")
+        self.assertEqual(check.engine_status, "fail")
+        self.assertTrue(check.engine_experimental)
 
     @patch("agentic_pr.health.run")
     def test_overall_status_ok(self, mock_run) -> None:

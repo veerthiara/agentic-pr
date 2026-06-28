@@ -82,15 +82,24 @@ class AgentConfig:
     repo_instructions_dir: str
     repo_instructions_max_bytes: int
     # Rev 11: Maintenance and cleanup
-    run_retention_days: int
-    log_retention_days: int
-    prompt_retention_days: int
-    comment_state_retention_days: int
-    max_log_preview_lines: int
+    run_retention_days: int = 30
+    log_retention_days: int = 30
+    prompt_retention_days: int = 30
+    comment_state_retention_days: int = 90
+    max_log_preview_lines: int = 80
     service_label: str | None = None
     # Rev 13: Coding engine abstraction
     engine: str = "aider"
     engine_timeout_seconds: int = 1800
+    openhands_command: str = "openhands"
+    openhands_timeout_seconds: int = 3600
+    openhands_extra_args: tuple[str, ...] = ()
+    openhands_use_json_output: bool = False
+    openhands_experimental: bool = False
+    openhands_llm_base_url: str = "http://host.docker.internal:11434/v1"
+    openhands_api_key: str = "local-llm"
+    openhands_docker_image: str = "docker.openhands.dev/openhands/openhands:1.8"
+    openhands_persistence_dir: Path | None = None
     repo_instructions: "RepoInstructions | None" = None
 
 
@@ -156,9 +165,15 @@ def load_config(path: str | Path) -> AgentConfig:
     max_log_preview_lines = _positive_int(values.get("MAX_LOG_PREVIEW_LINES", "80"), "MAX_LOG_PREVIEW_LINES")
     service_label = values.get("SERVICE_LABEL")
 
-    # Rev 13: Coding engine abstraction
     engine = values.get("ENGINE", "aider").lower()
-    engine_timeout_seconds = _positive_int(values.get("ENGINE_TIMEOUT_SECONDS", values.get("AIDER_TIMEOUT_SECONDS", "1800")), "ENGINE_TIMEOUT_SECONDS")
+    openhands_timeout_seconds = _positive_int(values.get("OPENHANDS_TIMEOUT_SECONDS", "3600"), "OPENHANDS_TIMEOUT_SECONDS")
+    engine_timeout_default = values.get("AIDER_TIMEOUT_SECONDS", "1800")
+    if engine == "openhands":
+        engine_timeout_default = values.get("OPENHANDS_TIMEOUT_SECONDS", str(openhands_timeout_seconds))
+    engine_timeout_seconds = _positive_int(
+        values.get("ENGINE_TIMEOUT_SECONDS", engine_timeout_default),
+        "ENGINE_TIMEOUT_SECONDS",
+    )
 
     return AgentConfig(
             repo_path=repo_path,
@@ -229,6 +244,15 @@ def load_config(path: str | Path) -> AgentConfig:
             # Rev 13: Coding engine abstraction
             engine=engine,
             engine_timeout_seconds=engine_timeout_seconds,
+            openhands_command=values.get("OPENHANDS_COMMAND", "openhands"),
+            openhands_timeout_seconds=openhands_timeout_seconds,
+            openhands_extra_args=tuple(_split_args(values.get("OPENHANDS_EXTRA_ARGS", ""))),
+            openhands_use_json_output=_bool(values.get("OPENHANDS_USE_JSON_OUTPUT", "false"), "OPENHANDS_USE_JSON_OUTPUT"),
+            openhands_experimental=_bool(values.get("OPENHANDS_EXPERIMENTAL", "false"), "OPENHANDS_EXPERIMENTAL"),
+            openhands_llm_base_url=values.get("OPENHANDS_LLM_BASE_URL", "http://host.docker.internal:11434/v1"),
+            openhands_api_key=values.get("OPENHANDS_API_KEY", "local-llm"),
+            openhands_docker_image=values.get("OPENHANDS_DOCKER_IMAGE", "docker.openhands.dev/openhands/openhands:1.8"),
+            openhands_persistence_dir=_resolve_path(Path(values.get("OPENHANDS_PERSISTENCE_DIR", ".openhands")), repo_path),
         )
 
 

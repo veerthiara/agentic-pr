@@ -14,10 +14,15 @@ from agentic_pr.github_ops import ensure_repo_access
 def run_doctor(config: AgentConfig, *, strict_clean: bool = True) -> list[str]:
     messages: list[str] = []
 
-    for command in ("gh", "git", "aider"):
+    for command in ("gh", "git"):
         if not shutil.which(command):
             raise RuntimeError(f"Required command not found: {command}")
         messages.append(f"ok: found {command}")
+
+    engine = get_engine(config)
+    messages.append(f"ok: configured engine {engine.name}")
+    if engine.name == "openhands":
+        messages.append(f"ok: experimental engine enabled: {str(config.openhands_experimental).lower()}")
 
     run(["gh", "auth", "status"])
     messages.append("ok: gh auth status")
@@ -39,11 +44,11 @@ def run_doctor(config: AgentConfig, *, strict_clean: bool = True) -> list[str]:
     _check_ollama(config.ollama_api_base)
     messages.append(f"ok: Ollama API reachable: {config.ollama_api_base}")
 
-    # Check engine
-    engine = get_engine(config)
-    if not shutil.which(engine.name):
-        raise RuntimeError(f"Engine command not found: {engine.name}")
-    messages.append(f"ok: engine {engine.name} available")
+    engine_result = engine.doctor(config)
+    if engine_result.status == "fail":
+        raise RuntimeError(engine_result.message)
+    prefix = "warn" if engine_result.status == "warn" else "ok"
+    messages.append(f"{prefix}: {engine_result.message}")
 
     return messages
 

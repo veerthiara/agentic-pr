@@ -262,3 +262,48 @@ SERVICE_LABEL=com.veer.agentic-pr.test
             self.assertEqual(config.comment_state_retention_days, 90)
             self.assertEqual(config.max_log_preview_lines, 100)
             self.assertEqual(config.service_label, "com.veer.agentic-pr.test")
+
+    def test_load_config_includes_openhands_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = tmp_path / "repo"
+            repo.mkdir()
+            config_file = tmp_path / "agent.env"
+            config_file.write_text(
+                f"""
+REPO_PATH={repo}
+OWNER_REPO=octo/repo
+BASE_BRANCH=main
+MODEL=ollama/qwen3-coder:30b
+LABEL_TODO=agent-run
+LABEL_RUNNING=agent-running
+LABEL_DONE=agent-pr-created
+LABEL_FAILED=agent-failed
+OLLAMA_API_BASE=http://localhost:11434
+ENGINE=openhands
+OPENHANDS_COMMAND=openhands
+OPENHANDS_TIMEOUT_SECONDS=3600
+OPENHANDS_EXTRA_ARGS=--workspace-write --max-iterations 2
+OPENHANDS_USE_JSON_OUTPUT=true
+OPENHANDS_EXPERIMENTAL=true
+"""
+            )
+
+            config = load_config(config_file)
+
+            self.assertEqual(config.engine, "openhands")
+            self.assertEqual(config.engine_timeout_seconds, 3600)
+            self.assertEqual(config.openhands_command, "openhands")
+            self.assertEqual(config.openhands_timeout_seconds, 3600)
+            self.assertEqual(config.openhands_extra_args, ("--workspace-write", "--max-iterations", "2"))
+            self.assertTrue(config.openhands_use_json_output)
+            self.assertTrue(config.openhands_experimental)
+
+    def test_repo_config_keeps_aider_default_engine(self) -> None:
+        values = parse_env_file(Path("config/repos/agent-test.env"))
+        self.assertEqual(values["ENGINE"], "aider")
+
+    def test_openhands_repo_config_uses_openhands_engine(self) -> None:
+        values = parse_env_file(Path("config/repos/agent-test-openhands.env"))
+        self.assertEqual(values["ENGINE"], "openhands")
+        self.assertEqual(values["OPENHANDS_EXPERIMENTAL"], "true")

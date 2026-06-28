@@ -27,6 +27,9 @@ class HealthCheck:
 class HealthSummary:
     checks: List[HealthCheck]
     overall_status: str  # "ok", "warn", "fail"
+    engine_name: str | None = None
+    engine_status: str | None = None
+    engine_experimental: bool = False
     latest_run: dict | None = None
 
 
@@ -119,17 +122,6 @@ def _check_ollama(config: AgentConfig) -> HealthCheck:
         return HealthCheck("ollama", "fail", f"Ollama check failed: {exc}")
 
 
-def _check_aider_exists() -> HealthCheck:
-    """Check that aider command exists."""
-    try:
-        result = run(["which", "aider"], check=False)
-        if result.returncode != 0:
-            return HealthCheck("aider", "fail", "aider command not found")
-        return HealthCheck("aider", "ok", "aider command available")
-    except Exception as exc:
-        return HealthCheck("aider", "fail", f"aider check failed: {exc}")
-
-
 def _check_launchd_service(config: AgentConfig) -> HealthCheck:
     """Check launchd service status if on macOS."""
     try:
@@ -178,6 +170,7 @@ def _check_engine(config: AgentConfig) -> HealthCheck:
 
 def get_health_summary(config: AgentConfig) -> HealthSummary:
     """Get a comprehensive health summary."""
+    engine_name = getattr(config, "engine", "aider")
     checks = [
         _check_config(config),
         _check_repo_path(config),
@@ -187,7 +180,6 @@ def get_health_summary(config: AgentConfig) -> HealthSummary:
         _check_gh_auth(config),
         _check_owner_repo(config),
         _check_ollama(config),
-        _check_aider_exists(),
         _check_launchd_service(config),
         _check_lock_file(config),
         _check_engine(config),
@@ -202,4 +194,11 @@ def get_health_summary(config: AgentConfig) -> HealthSummary:
         elif check.status == "warn" and overall_status == "ok":
             overall_status = "warn"
     
-    return HealthSummary(checks=checks, overall_status=overall_status)
+    engine_check = next((check for check in checks if check.name.startswith("engine")), None)
+    return HealthSummary(
+        checks=checks,
+        overall_status=overall_status,
+        engine_name=engine_name,
+        engine_status=engine_check.status if engine_check else None,
+        engine_experimental=bool(getattr(config, "openhands_experimental", False) and engine_name == "openhands"),
+    )

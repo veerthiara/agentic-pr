@@ -142,6 +142,11 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "health":
             health = get_health_summary(config)
             print(f"Overall status: {health.overall_status}")
+            if health.engine_name:
+                print(f"Engine: {health.engine_name}")
+            if health.engine_status:
+                print(f"Engine status: {health.engine_status}")
+            print(f"Experimental: {str(health.engine_experimental).lower()}")
             for check in health.checks:
                 print(f"  {check.name}: {check.status} - {check.message}")
             if health.latest_run:

@@ -182,3 +182,33 @@ class RunRecordTests(unittest.TestCase):
             self.assertEqual(data["engine_exit_code"], 124)
             self.assertTrue(data["engine_timed_out"])
             self.assertEqual(data["engine_error_summary"], "Engine timed out after 1800 seconds")
+
+    def test_run_record_supports_openhands_engine_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            record = RunRecord(
+                run_id="run-101",
+                issue_number=9,
+                issue_title="Add mode function",
+                owner_repo="octo/repo",
+                model="ollama/qwen3-coder:30b",
+                base_branch="main",
+                agent_branch="agent/issue-9-101",
+                status="failed",
+                pr_url=None,
+                started_at="2024-01-01T10:00:00",
+                finished_at="2024-01-01T10:05:00",
+                log_file="/tmp/run.log",
+                error_summary="OpenHands failed",
+                engine="openhands",
+                engine_exit_code=2,
+                engine_timed_out=False,
+                engine_error_summary="OpenHands exited with code 2",
+            )
+
+            path = write_run_record(Path(tmp), record)
+            data = json.loads(path.read_text())
+
+            self.assertEqual(data["engine"], "openhands")
+            self.assertEqual(data["engine_exit_code"], 2)
+            self.assertFalse(data["engine_timed_out"])
+            self.assertEqual(data["engine_error_summary"], "OpenHands exited with code 2")
