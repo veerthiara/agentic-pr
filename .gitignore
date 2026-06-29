@@ -6,3 +6,13 @@ var/runs/*
 !var/runs/.gitkeep
 .aider*
 .env
+
+# OpenHands local runtime artifacts
+.openhands-runtime/
+/infra/openhands/.openhands-runtime/
+
+# Backward-compatible ignores for old OpenHands runtime paths
+/infra/openhands/conversations/
+/infra/openhands/bash_events/
+/conversations/
+/bash_events/

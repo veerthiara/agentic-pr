@@ -1,0 +1,225 @@
+SHELL := /bin/bash
+
+ENV_FILE ?= .env
+COMPOSE_FILE := docker-compose.yml
+COMPOSE_CMD := docker-compose
+
+OPENHANDS_REPO_PATH_FROM_ENV := $(shell grep '^OPENHANDS_REPO_PATH=' $(ENV_FILE) 2>/dev/null | cut -d= -f2-)
+OPENHANDS_REPO_PATH ?= $(if $(OPENHANDS_REPO_PATH_FROM_ENV),$(OPENHANDS_REPO_PATH_FROM_ENV),$(shell cd ../.. && pwd))
+
+OPENHANDS_PERSISTENCE_DIR_FROM_ENV := $(shell grep '^OPENHANDS_PERSISTENCE_DIR=' $(ENV_FILE) 2>/dev/null | cut -d= -f2-)
+OPENHANDS_PERSISTENCE_DIR ?= $(if $(OPENHANDS_PERSISTENCE_DIR_FROM_ENV),$(OPENHANDS_PERSISTENCE_DIR_FROM_ENV),${HOME}/.openhands-agentic-pr)
+
+OPENHANDS_WEB_MEMORY_LIMIT ?= 6g
+OPENHANDS_WEB_MEMORY_SWAP_LIMIT ?= 8g
+OPENHANDS_WEB_CONTAINER := agentic-pr-openhands-web
+OPENHANDS_CLI_IMAGE := agentic-pr/openhands-cli:local
+
+LLM_MODEL ?= ollama/qwen3-coder:30b
+LLM_BASE_URL ?= http://host.docker.internal:11434/v1
+LLM_API_KEY ?= local-llm
+
+COLIMA_CPU ?= 8
+COLIMA_MEMORY ?= 12
+COLIMA_DISK ?= 100
+
+.PHONY: help up down restart restart-clean restart-clean-settings status ps logs agent-logs diagnose profiles profile-debug clean-profiles reset-llm-profile reset-openhands-settings reset-llm-state clean-agents clean-cli clean prune-containers colima-status colima-start colima-restart colima-stop config stats env ollama-test
+
+help:
+	@echo "OpenHands Makefile targets:"
+	@echo "  up                      Start OpenHands web UI (pulls latest image)"
+	@echo "  down                    Stop and remove OpenHands web container"
+	@echo "  restart                 Restart OpenHands web (down then up)"
+	@echo "  restart-clean           Full clean restart (down + clean-agents + up)"
+	@echo "  restart-clean-settings  Full reset: stop, reset settings/profile, clean agents, start"
+	@echo "  status                  Show OpenHands-related container status"
+	@echo "  ps                      Show all Docker containers"
+	@echo "  logs                    Follow logs of web container"
+	@echo "  agent-logs              Follow logs of newest sandbox container"
+	@echo "  diagnose                Run diagnostics (Colima, Docker, compose, logs, OOM check)"
+	@echo "  profiles                Show all persisted OpenHands profile model values"
+	@echo "  profile-debug           Show raw profile/setting values for debugging"
+	@echo "  clean-profiles          Remove stale persisted OpenHands profiles"
+	@echo "  reset-llm-profile       Remove stale LLM profile and show UI setup instructions"
+	@echo "  reset-openhands-settings  Backup and remove settings.json + profiles/Ollama.json"
+	@echo "  reset-llm-state         Stop, reset settings/profile, clean agents (no restart)"
+	@echo "  clean-agents            Remove all oh-agent-server-* containers"
+	@echo "  clean-cli               Remove old CLI containers by image"
+	@echo "  clean                   Run down, clean-agents, clean-cli, clean-profiles"
+	@echo "  prune-containers        Remove all stopped containers (docker container prune)"
+	@echo ""
+	@echo "Colima targets:"
+	@echo "  colima-status           Show Colima VM status and Docker info"
+	@echo "  colima-start            Start Colima VM with configured CPU/memory/disk"
+	@echo "  colima-restart          Restart Colima VM with configured resources"
+	@echo "  colima-stop             Stop Colima VM"
+	@echo ""
+	@echo "Utility targets:"
+	@echo "  config                  Show resolved Docker Compose config"
+	@echo "  stats                   Show Docker container memory/CPU stats"
+	@echo "  env                     Show LLM/OpenHands env vars in web container"
+	@echo "  ollama-test             Test Ollama connectivity from Docker"
+	@echo ""
+	@echo "Environment variables (with defaults):"
+	@echo "  OPENHANDS_REPO_PATH        (default: repo root or from .env)"
+	@echo "  OPENHANDS_PERSISTENCE_DIR  (default: ~/.openhands-agentic-pr or from .env)"
+	@echo "  OPENHANDS_WEB_MEMORY_LIMIT (default: 6g)"
+	@echo "  OPENHANDS_WEB_MEMORY_SWAP_LIMIT (default: 8g)"
+	@echo "  LLM_MODEL                  (default: ollama/qwen3-coder:30b)"
+	@echo "  LLM_BASE_URL               (default: http://host.docker.internal:11434/v1)"
+	@echo "  LLM_API_KEY                (default: local-llm)"
+	@echo "  COLIMA_CPU                 (default: 8)"
+	@echo "  COLIMA_MEMORY              (default: 12) - GB"
+	@echo "  COLIMA_DISK                (default: 100) - GB"
+	@echo "  ENV_FILE                   (default: .env)"
+
+up:
+	mkdir -p "$(OPENHANDS_REPO_PATH)/.openhands-runtime/conversations"
+	mkdir -p "$(OPENHANDS_REPO_PATH)/.openhands-runtime/bash_events"
+	OH_AGENT_SERVER_ENV='{"LLM_MODEL": "$(LLM_MODEL)", "LLM_BASE_URL": "$(LLM_BASE_URL)", "LLM_API_KEY": "$(LLM_API_KEY)", "OH_CONVERSATIONS_PATH": "/workspace/.openhands-runtime/conversations", "OH_BASH_EVENTS_DIR": "/workspace/.openhands-runtime/bash_events", "SANDBOX_USER_ID": "0", "SANDBOX_GROUP_ID": "0"}' \
+	$(COMPOSE_CMD) up --pull always -d
+
+down:
+	$(COMPOSE_CMD) down --remove-orphans
+
+restart: down clean-agents up
+
+restart-clean: down clean-agents up
+
+restart-clean-settings: down reset-openhands-settings clean-agents up
+
+status:
+	@docker ps -a --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}' \
+		| grep -E 'NAMES|openhands|oh-agent-server|agentic-pr' || true
+
+ps:
+	docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
+
+logs:
+	docker logs -f $(OPENHANDS_WEB_CONTAINER)
+
+agent-logs:
+	@latest_agent=$$(docker ps -a --filter 'name=^/oh-agent-server-' --format '{{.Names}}' | head -n 1); \
+	if [[ -z "$$latest_agent" ]]; then \
+		echo "No oh-agent-server-* containers found"; \
+	else \
+		echo "Tailing logs for: $$latest_agent"; \
+		docker logs -f "$$latest_agent"; \
+	fi
+
+diagnose:
+	@echo "=== Colima Status ===" && colima status 2>/dev/null || echo "Colima not running"
+	@echo ""
+	@echo "=== Docker Info ===" && docker info | grep -i -E 'cpus|memory|name|operating system'
+	@echo ""
+	@echo "=== Resolved Docker Compose Config ===" && $(COMPOSE_CMD) config
+	@echo ""
+	@echo "=== Docker Stats ===" && docker stats --no-stream
+	@echo ""
+	@echo "=== Web Container State ===" && \
+	docker inspect $(OPENHANDS_WEB_CONTAINER) --format 'Memory={{.HostConfig.Memory}} MemorySwap={{.HostConfig.MemorySwap}} OOMKilled={{.State.OOMKilled}} ExitCode={{.State.ExitCode}} Status={{.State.Status}}' 2>/dev/null || echo "Container not found"
+	@echo ""
+	@echo "=== Last 300 lines: Web Container ===" && \
+	docker logs --tail=300 $(OPENHANDS_WEB_CONTAINER) 2>&1 || echo "No logs available"
+
+profiles:
+	@echo "Inspecting OpenHands persisted profiles in $(OPENHANDS_PERSISTENCE_DIR)"
+	@grep -R "qwen3-coder" "$(OPENHANDS_PERSISTENCE_DIR)" 2>/dev/null || true
+	@grep -R '"model"' "$(OPENHANDS_PERSISTENCE_DIR)" 2>/dev/null || true
+
+profile-debug:
+	@echo "=== Raw profile/setting values ==="
+	@grep -R "qwen3-coder" "$(OPENHANDS_PERSISTENCE_DIR)" 2>/dev/null || true
+	@grep -R '"model"' "$(OPENHANDS_PERSISTENCE_DIR)" 2>/dev/null || true
+	@grep -R '"reasoning"' "$(OPENHANDS_PERSISTENCE_DIR)" 2>/dev/null || true
+	@grep -R '"thinking"' "$(OPENHANDS_PERSISTENCE_DIR)" 2>/dev/null || true
+	@grep -R '"enable_thinking"' "$(OPENHANDS_PERSISTENCE_DIR)" 2>/dev/null || true
+	@grep -R '"extended_thinking_budget"' "$(OPENHANDS_PERSISTENCE_DIR)" 2>/dev/null || true
+	@grep -R '"reasoning_effort"' "$(OPENHANDS_PERSISTENCE_DIR)" 2>/dev/null || true
+	@grep -R '"extended_thinking"' "$(OPENHANDS_PERSISTENCE_DIR)" 2>/dev/null || true
+	@echo ""
+	@echo "=== settings.json (if exists) ==="
+	@cat "$(OPENHANDS_PERSISTENCE_DIR)/settings.json" 2>/dev/null | python3 -m json.tool 2>/dev/null || cat "$(OPENHANDS_PERSISTENCE_DIR)/settings.json" 2>/dev/null || echo "No settings.json"
+	@echo ""
+	@echo "=== profiles/Ollama.json (if exists) ==="
+	@cat "$(OPENHANDS_PERSISTENCE_DIR)/profiles/Ollama.json" 2>/dev/null | python3 -m json.tool 2>/dev/null || cat "$(OPENHANDS_PERSISTENCE_DIR)/profiles/Ollama.json" 2>/dev/null || echo "No profiles/Ollama.json"
+
+clean-profiles:
+	@echo "Removing stale OpenHands profiles..."
+	rm -f "$(OPENHANDS_PERSISTENCE_DIR)/profiles/Ollama.json"
+	@echo "Done. Remaining profiles:"
+	@make profiles
+
+reset-llm-profile: clean-profiles
+	@echo "Removed stale LLM profile. Restart OpenHands and recreate the UI profile with:"
+	@echo "  Model: ollama/qwen3-coder:30b"
+	@echo "  Base URL: http://host.docker.internal:11434/v1"
+	@echo "  API key: local-llm"
+
+reset-openhands-settings:
+	@echo "Backing up and removing OpenHands persisted settings/profile..."
+	@mkdir -p "$(OPENHANDS_PERSISTENCE_DIR)/profiles"
+	@if [[ -f "$(OPENHANDS_PERSISTENCE_DIR)/settings.json" ]]; then \
+		backup="$(OPENHANDS_PERSISTENCE_DIR)/settings.json.bak.$$(date +%Y%m%d%H%M%S)"; \
+		echo "Backing up settings.json to $$backup"; \
+		cp "$(OPENHANDS_PERSISTENCE_DIR)/settings.json" "$$backup"; \
+		rm -f "$(OPENHANDS_PERSISTENCE_DIR)/settings.json"; \
+	else \
+		echo "No settings.json found"; \
+	fi
+	@if [[ -f "$(OPENHANDS_PERSISTENCE_DIR)/profiles/Ollama.json" ]]; then \
+		echo "Removing profiles/Ollama.json"; \
+		rm -f "$(OPENHANDS_PERSISTENCE_DIR)/profiles/Ollama.json"; \
+	else \
+		echo "No profiles/Ollama.json found"; \
+	fi
+	@echo "Done. OpenHands will recreate settings/profile after restart and UI save."
+
+reset-llm-state: down reset-openhands-settings clean-agents
+	@echo "OpenHands LLM state reset complete."
+	@echo "Now run: make -f Makefile.openhands up"
+
+clean-agents:
+	@docker ps -a --filter "name=^/oh-agent-server-" --format "{{.Names}}" | while read -r name; do \
+		[[ -n "$$name" ]] && echo "Removing $$name" && docker rm -f "$$name"; \
+	done
+
+clean-cli:
+	@docker ps -a --filter "ancestor=$(OPENHANDS_CLI_IMAGE)" --format "{{.Names}}" | while read -r name; do \
+		[[ -n "$$name" ]] && echo "Removing $$name" && docker rm -f "$$name"; \
+	done
+
+clean: down clean-agents clean-cli clean-profiles
+
+prune-containers:
+	docker container prune -f
+
+colima-status:
+	colima status || true
+	docker info | grep -i -E 'cpus|memory|name|operating system' || true
+
+colima-start:
+	colima start --cpu $(COLIMA_CPU) --memory $(COLIMA_MEMORY) --disk $(COLIMA_DISK)
+
+colima-restart:
+	colima stop || true
+	colima start --cpu $(COLIMA_CPU) --memory $(COLIMA_MEMORY) --disk $(COLIMA_DISK)
+
+colima-stop:
+	colima stop
+
+config:
+	$(COMPOSE_CMD) config
+
+stats:
+	docker stats --no-stream
+
+env:
+	docker exec $(OPENHANDS_WEB_CONTAINER) env | grep -E 'LLM_MODEL|LLM_BASE_URL|LLM_API_KEY|OH_CONVERSATIONS_PATH|OH_BASH_EVENTS_DIR' || true
+
+ollama-test:
+	docker run --rm curlimages/curl:latest http://host.docker.internal:11434/v1/models
+	docker run --rm curlimages/curl:latest \
+	  -H "Content-Type: application/json" \
+	  -d '{"model":"qwen3-coder:30b","messages":[{"role":"user","content":"Say hello in one short sentence."}],"stream":false}' \
+	  http://host.docker.internal:11434/v1/chat/completions

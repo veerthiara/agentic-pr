@@ -1,22 +1,35 @@
+name: agentic-pr-openhands
+
 services:
   openhands:
-    image: ${OPENHANDS_DOCKER_IMAGE:-agentic-pr/openhands-cli:local}
-    build:
-      context: .
-      dockerfile: Dockerfile
-    working_dir: /workspace
-    entrypoint: ["/bin/bash", "-lc"]
-    command: ["openhands --help"]
+    image: docker.openhands.dev/openhands/openhands:1.8
+    container_name: agentic-pr-openhands-web
+    working_dir: /app
+    user: root
+    restart: unless-stopped
+    mem_limit: ${OPENHANDS_WEB_MEMORY_LIMIT:-6g}
     environment:
       LOG_ALL_EVENTS: "true"
-      LLM_MODEL: ${LLM_MODEL:-openai/qwen3-coder:30b}
+      LLM_MODEL: ${LLM_MODEL:-ollama/qwen3-coder:30b}
       LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434/v1}
       LLM_API_KEY: ${LLM_API_KEY:-local-llm}
-      SANDBOX_VOLUMES: /workspace:/workspace:rw
+
+      SANDBOX_VOLUMES: ${OPENHANDS_REPO_PATH}:/workspace:rw
+
       OH_PERSISTENCE_DIR: /.openhands
+      OH_CONVERSATIONS_PATH: /workspace/.openhands-runtime/conversations
+      OH_BASH_EVENTS_DIR: /workspace/.openhands-runtime/bash_events
+
+      OH_AGENT_SERVER_ENV: '{"LLM_MODEL": "${LLM_MODEL:-ollama/qwen3-coder:30b}", "LLM_BASE_URL": "${LLM_BASE_URL:-http://host.docker.internal:11434/v1}", "LLM_API_KEY": "${LLM_API_KEY:-local-llm}", "OH_CONVERSATIONS_PATH": "/workspace/.openhands-runtime/conversations", "OH_BASH_EVENTS_DIR": "/workspace/.openhands-runtime/bash_events", "SANDBOX_USER_ID": "0", "SANDBOX_GROUP_ID": "0"}'
+
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${OPENHANDS_PERSISTENCE_DIR:-${HOME}/.openhands-agentic-pr}:/.openhands
-      - ${OPENHANDS_REPO_PATH:-.}:/workspace
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - ${OPENHANDS_REPO_PATH}:/workspace
+
+    ports:
+      - "3000:3000"
+
+    labels:
+      com.agentic-pr.role: openhands-web
+      com.agentic-pr.managed: "true"
